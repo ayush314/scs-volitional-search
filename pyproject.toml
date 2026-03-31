@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scs-volitional-search"
+version = "0.1.0"
+description = "Research codebase for mechanistic spinal cord stimulation search with volitional motor control."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "CMU 18-879 project team" }
+]
+dependencies = [
+  "matplotlib>=3.7,<4",
+  "neuron==8.2.7",
+  "numpy>=1.24,<3",
+  "scipy>=1.10,<2",
+  "tqdm>=4.66,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+]
+optim = [
+  "ConfigSpace>=0.7",
+  "botorch>=0.10",
+  "cma>=3.3",
+  "gpytorch>=1.11",
+  "torch>=2.1",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

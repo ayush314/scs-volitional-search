@@ -1,0 +1,2 @@
+# Thin compatibility wrapper around pyproject.toml.
+-e .[optim,dev]
