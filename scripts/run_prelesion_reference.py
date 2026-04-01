@@ -7,7 +7,7 @@ import argparse
 
 import numpy as np
 
-from scs_search.config import ConditionSpec, SimulationConfig, dataclass_config_bundle
+from scs_search.config import PatientConditionSpec, SimulationConfig, dataclass_config_bundle
 from scs_search.metrics import compute_emg_similarity, mean_and_std_over_seeds
 from scs_search.patterns import generate_tonic_pattern
 from scs_search.simulator_adapter import run_condition
@@ -26,8 +26,8 @@ def main() -> None:
     output_dir = ensure_dir(args.output_dir)
     seeds = tuple(dict.fromkeys(config.seed_config.train_seeds + config.seed_config.report_seeds))
 
-    healthy = ConditionSpec("healthy_prelesion", config.healthy_perc_supra_intact)
-    lesion = ConditionSpec("lesion_no_stim", config.lesion_perc_supra_intact)
+    healthy = PatientConditionSpec("healthy_prelesion", config.healthy_perc_supra_intact)
+    lesion = PatientConditionSpec("lesion_no_stim", config.lesion_perc_supra_intact)
 
     zero_pattern = generate_tonic_pattern(
         freq_hz=40.0,

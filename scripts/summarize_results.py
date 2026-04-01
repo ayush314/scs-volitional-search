@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from scs_search.analysis import reference_baseline_stats
-from scs_search.config import ConditionSpec, PatternParameters, SimulationConfig
+from scs_search.config import PatientConditionSpec, PatternParameters, SimulationConfig
 from scs_search.patterns import generate_stim_pattern
 from scs_search.plotting import plot_best_so_far, plot_emg_examples, plot_frontier, plot_seed_sensitivity
 from scs_search.simulator_adapter import run_condition
@@ -92,7 +92,7 @@ def maybe_plot_reference(results_root: Path) -> None:
         baseline_text = f" | lesion baseline corr={float(baseline['mean_corr']):.3f}"
 
     config = SimulationConfig(backend="neuron")
-    lesion_condition = ConditionSpec("lesion_best_stim", config.lesion_perc_supra_intact)
+    lesion_condition = PatientConditionSpec("lesion_best_stim", config.lesion_perc_supra_intact)
     stim_pattern = generate_stim_pattern(
         PatternParameters.from_any(best_candidate["theta"]),
         t_end_ms=config.simulation_duration_ms,

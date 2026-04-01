@@ -13,7 +13,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from .config import (
-    ConditionSpec,
+    PatientConditionSpec,
     EvaluationSummary,
     PatternParameters,
     SimulationConfig,
@@ -179,7 +179,7 @@ def _set_trial_seed(seed: int) -> None:
 
 
 def _run_neuron_condition(
-    condition: ConditionSpec,
+    condition: PatientConditionSpec,
     stim_pattern: StimPattern,
     trial_seed: int,
     config: SimulationConfig,
@@ -276,7 +276,7 @@ def _run_neuron_condition(
     )
 
 def run_single_condition(
-    condition: ConditionSpec,
+    condition: PatientConditionSpec,
     stim_pattern: StimPattern,
     trial_seed: int,
     config: SimulationConfig,
@@ -297,7 +297,7 @@ def run_single_condition(
 
 
 def run_condition(
-    condition: ConditionSpec,
+    condition: PatientConditionSpec,
     stim_pattern: StimPattern,
     seeds: Iterable[int],
     config: SimulationConfig,
@@ -352,7 +352,7 @@ def evaluate_pattern(
         reference_emg_by_seed = {result.trial_seed: result.emg_signal for result in healthy_results}
     lesion_results = [
         run_single_condition(
-            ConditionSpec(label="lesion_scs", perc_supra_intact=lesion_condition.perc_supra_intact),
+            PatientConditionSpec(label="lesion_scs", perc_supra_intact=lesion_condition.perc_supra_intact),
             stim_pattern,
             int(seed),
             config,

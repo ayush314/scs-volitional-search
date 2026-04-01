@@ -225,7 +225,7 @@ class SimulationConfig:
 
 
 @dataclass(frozen=True)
-class ConditionSpec:
+class PatientConditionSpec:
     """Description of a healthy or lesioned simulation condition."""
 
     label: str
@@ -240,8 +240,8 @@ class StimPattern:
     theta: PatternParameters
     time_ms: np.ndarray
     alpha_t: np.ndarray
-    pulse_times_ms: np.ndarray
-    pulse_alpha: np.ndarray
+    pulse_times_ms: np.ndarray  # pulse width
+    pulse_alpha: np.ndarray  # pulse amplitude
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -319,12 +319,12 @@ class OptimizerRunResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def condition_defaults(config: SimulationConfig) -> tuple[ConditionSpec, ConditionSpec]:
+def condition_defaults(config: SimulationConfig) -> tuple[PatientConditionSpec, PatientConditionSpec]:
     """Return the default healthy and lesioned conditions."""
 
     return (
-        ConditionSpec(label="healthy_prelesion", perc_supra_intact=config.healthy_perc_supra_intact),
-        ConditionSpec(label="lesion", perc_supra_intact=config.lesion_perc_supra_intact),
+        PatientConditionSpec(label="healthy_prelesion", perc_supra_intact=config.healthy_perc_supra_intact),
+        PatientConditionSpec(label="lesion", perc_supra_intact=config.lesion_perc_supra_intact),
     )
 
 
