@@ -97,6 +97,7 @@ def maybe_plot_reference(results_root: Path) -> None:
         PatternParameters.from_any(best_candidate["theta"]),
         t_end_ms=config.simulation_duration_ms,
         dt_ms=config.dt_ms,
+        device_config=config.device_config,
     )
     lesion_result = run_condition(lesion_condition, stim_pattern, [seed], config)[0]
     plot_emg_examples(

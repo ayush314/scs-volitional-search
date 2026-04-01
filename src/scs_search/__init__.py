@@ -1,6 +1,7 @@
 """Core package for patterned SCS search on the fine motor task."""
 
 from .config import (
+    DeviceConfig,
     DoseConfig,
     EvaluationSummary,
     MetricConfig,
@@ -14,6 +15,7 @@ from .config import (
 )
 
 __all__ = [
+    "DeviceConfig",
     "DoseConfig",
     "EvaluationSummary",
     "MetricConfig",

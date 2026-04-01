@@ -19,8 +19,13 @@ def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | Non
         "family": summary.family,
         "mean_corr": summary.mean_corr,
         "std_corr": summary.std_corr,
-        "raw_dose": summary.mean_raw_dose,
-        "norm_dose": summary.mean_norm_dose,
+        "device_cost": summary.mean_device_cost,
+        "std_device_cost": summary.std_device_cost,
+        "total_current_ma": summary.mean_total_current_ma,
+        "charge_per_pulse_uc": summary.mean_charge_per_pulse_uc,
+        "charge_rate_uc_per_s": summary.mean_charge_rate_uc_per_s,
+        "recruitment_raw_dose": summary.mean_raw_dose,
+        "recruitment_norm_dose": summary.mean_norm_dose,
         "penalized_objective": summary.penalized_objective,
         "robust_objective": summary.robust_objective,
         **{f"theta_{key}": value for key, value in summary.theta.to_dict().items()},
@@ -31,24 +36,26 @@ def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | Non
 
 
 def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Return the upper hull in dose-correlation space."""
+    """Return the upper hull in device-budget/correlation space."""
 
-    best_by_dose: dict[float, dict[str, Any]] = {}
+    best_by_cost: dict[float, dict[str, Any]] = {}
     for record in records:
-        dose = float(record["norm_dose"])
+        dose = float(record.get("device_cost", record.get("norm_dose", np.inf)))
         score = float(record["mean_corr"])
-        existing = best_by_dose.get(dose)
+        existing = best_by_cost.get(dose)
         if existing is None or score > float(existing["mean_corr"]):
-            best_by_dose[dose] = dict(record)
+            best_by_cost[dose] = dict(record)
 
-    ordered = [best_by_dose[dose] for dose in sorted(best_by_dose)]
+    ordered = [best_by_cost[dose] for dose in sorted(best_by_cost)]
     if len(ordered) <= 2:
         return ordered
 
     def cross(o: Mapping[str, Any], a: Mapping[str, Any], b: Mapping[str, Any]) -> float:
         return (
-            (float(a["norm_dose"]) - float(o["norm_dose"])) * (float(b["mean_corr"]) - float(o["mean_corr"]))
-            - (float(a["mean_corr"]) - float(o["mean_corr"])) * (float(b["norm_dose"]) - float(o["norm_dose"]))
+            (float(a.get("device_cost", a.get("norm_dose"))) - float(o.get("device_cost", o.get("norm_dose"))))
+            * (float(b["mean_corr"]) - float(o["mean_corr"]))
+            - (float(a["mean_corr"]) - float(o["mean_corr"]))
+            * (float(b.get("device_cost", b.get("norm_dose"))) - float(o.get("device_cost", o.get("norm_dose"))))
         )
 
     hull: list[dict[str, Any]] = []
@@ -73,7 +80,7 @@ def best_so_far_trace(
     for index, record in enumerate(records, start=1):
         score = float(record.get(score_key, float("-inf")))
         best_any = max(best_any, score)
-        if budget_norm is None or float(record.get("norm_dose", float("inf"))) <= float(budget_norm):
+        if budget_norm is None or float(record.get("device_cost", record.get("norm_dose", float("inf")))) <= float(budget_norm):
             best_feasible = max(best_feasible, score)
         trace.append(
             {

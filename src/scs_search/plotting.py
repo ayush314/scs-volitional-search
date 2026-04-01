@@ -18,6 +18,12 @@ def _prepare_output(path: str | Path) -> Path:
     return output_path
 
 
+def _cost_value(record: Mapping[str, float]) -> float:
+    """Return the public hardware-budget cost from a flat record."""
+
+    return float(record.get("device_cost", record.get("norm_dose", 0.0)))
+
+
 def plot_emg_examples(reference_emg: np.ndarray, candidate_emg: np.ndarray, output_path: str | Path, title: str) -> None:
     """Plot a pre-lesion vs lesion+SCS EMG comparison."""
 
@@ -52,7 +58,7 @@ def _scatter_with_hull(
     records_list = list(records)
     if records_list:
         ax.scatter(
-            [float(record["norm_dose"]) for record in records_list],
+            [_cost_value(record) for record in records_list],
             [float(record["mean_corr"]) for record in records_list],
             s=16,
             alpha=scatter_alpha,
@@ -63,7 +69,7 @@ def _scatter_with_hull(
     frontier_list = list(frontier)
     if frontier_list:
         ax.plot(
-            [float(record["norm_dose"]) for record in frontier_list],
+            [_cost_value(record) for record in frontier_list],
             [float(record["mean_corr"]) for record in frontier_list],
             marker="o",
             linewidth=1.5,
@@ -80,7 +86,7 @@ def plot_frontier(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot restoration vs normalized dose with the upper-hull overlay."""
+    """Plot restoration vs normalized device budget with the upper-hull overlay."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -94,9 +100,9 @@ def plot_frontier(
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized dose (fraction of alpha=1 at 120 Hz over run)")
+    ax.set_xlabel("Normalized device budget usage")
     ax.set_ylabel("EMG restoration correlation")
-    ax.set_title("Dose vs restoration hull")
+    ax.set_title("Device budget vs restoration hull")
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=200)
@@ -115,7 +121,7 @@ def plot_frontier_overlay(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot one dose-correlation hull on top of another reference hull."""
+    """Plot one device-budget/correlation hull on top of another reference hull."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -138,9 +144,9 @@ def plot_frontier_overlay(
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized dose (fraction of alpha=1 at 120 Hz over run)")
+    ax.set_xlabel("Normalized device budget usage")
     ax.set_ylabel("EMG restoration correlation")
-    ax.set_title(f"Dose vs restoration: {overlay_name} over {base_name}")
+    ax.set_title(f"Device budget vs restoration: {overlay_name} over {base_name}")
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=200)

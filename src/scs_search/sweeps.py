@@ -17,19 +17,29 @@ def sweep_grid_values() -> dict[str, np.ndarray]:
     """Return the default sweep preset used for the main experiments."""
 
     return {
-        "tonic_freqs": np.linspace(10.0, 120.0, num=12),
+        "tonic_freqs": np.linspace(10.0, 1200.0, num=12),
         "tonic_alpha": np.linspace(0.1, 0.9, num=9),
-        "duty_freqs": np.linspace(10.0, 120.0, num=12),
+        "duty_freqs": np.linspace(10.0, 1200.0, num=12),
         "duty_cycle": np.linspace(0.1, 0.9, num=9),
         "full_theta_samples": np.asarray([256]),
     }
 
 
-def tonic_grid_points(freq_values: Iterable[float], alpha_values: Iterable[float], duration_ms: int) -> list[PatternParameters]:
+def tonic_grid_points(
+    freq_values: Iterable[float],
+    alpha_values: Iterable[float],
+    duration_ms: int,
+    pulse_width_us: float,
+) -> list[PatternParameters]:
     """Generate theta values for the tonic slice."""
 
     return [
-        theta_from_tonic(freq_hz=float(freq_hz), alpha=float(alpha), t_end_ms=float(duration_ms))
+        theta_from_tonic(
+            freq_hz=float(freq_hz),
+            alpha=float(alpha),
+            t_end_ms=float(duration_ms),
+            pulse_width_us=float(pulse_width_us),
+        )
         for freq_hz in freq_values
         for alpha in alpha_values
     ]
@@ -40,11 +50,18 @@ def duty_cycle_grid_points(
     duty_cycle_values: Iterable[float],
     alpha: float,
     cycle_ms: float,
+    pulse_width_us: float,
 ) -> list[PatternParameters]:
     """Generate theta values for the duty-cycle slice."""
 
     return [
-        theta_from_duty_cycle(freq_hz=float(freq_hz), alpha=float(alpha), duty_cycle=float(duty_cycle), cycle_ms=float(cycle_ms))
+        theta_from_duty_cycle(
+            freq_hz=float(freq_hz),
+            pulse_width_us=float(pulse_width_us),
+            alpha=float(alpha),
+            duty_cycle=float(duty_cycle),
+            cycle_ms=float(cycle_ms),
+        )
         for freq_hz in freq_values
         for duty_cycle in duty_cycle_values
     ]
@@ -94,7 +111,12 @@ def run_sweep_suite(
 
     preset = sweep_grid_values()
     tonic_records = evaluate_theta_set(
-        tonic_grid_points(preset["tonic_freqs"], preset["tonic_alpha"], config.simulation_duration_ms),
+        tonic_grid_points(
+            preset["tonic_freqs"],
+            preset["tonic_alpha"],
+            config.simulation_duration_ms,
+            config.device_config.default_pulse_width_us,
+        ),
         seeds=seeds,
         config=config,
         label="tonic",
@@ -106,6 +128,7 @@ def run_sweep_suite(
             duty_cycle_values=preset["duty_cycle"],
             alpha=duty_cycle_alpha,
             cycle_ms=config.baseline_cycle_ms,
+            pulse_width_us=config.device_config.default_pulse_width_us,
         ),
         seeds=seeds,
         config=config,

@@ -29,7 +29,14 @@ def main() -> None:
     healthy = ConditionSpec("healthy_prelesion", config.healthy_perc_supra_intact)
     lesion = ConditionSpec("lesion_no_stim", config.lesion_perc_supra_intact)
 
-    zero_pattern = generate_tonic_pattern(freq_hz=40.0, alpha=0.0, t_end_ms=config.simulation_duration_ms, dt_ms=config.dt_ms)
+    zero_pattern = generate_tonic_pattern(
+        freq_hz=40.0,
+        alpha=0.0,
+        t_end_ms=config.simulation_duration_ms,
+        dt_ms=config.dt_ms,
+        pulse_width_us=config.device_config.default_pulse_width_us,
+        device_config=config.device_config,
+    )
 
     healthy_results = run_condition(healthy, zero_pattern, seeds, config, progress_desc="Reference healthy")
     lesion_results = run_condition(lesion, zero_pattern, seeds, config, progress_desc="Reference lesion")

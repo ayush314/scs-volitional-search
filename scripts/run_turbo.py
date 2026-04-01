@@ -47,7 +47,7 @@ def main() -> None:
     plot_frontier(
         history,
         frontier,
-        output_dir / "dose_vs_corr.png",
+        output_dir / "device_budget_vs_corr.png",
         baseline_corr=None if baseline is None else float(baseline["mean_corr"]),
     )
 
@@ -60,7 +60,7 @@ def main() -> None:
             read_json(grid_frontier_file),
             history,
             frontier,
-            output_dir / "dose_vs_corr_with_grid.png",
+            output_dir / "device_budget_vs_corr_with_grid.png",
             base_name="Grid sweep",
             overlay_name="TuRBO",
             baseline_corr=None if baseline is None else float(baseline["mean_corr"]),

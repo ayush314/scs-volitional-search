@@ -24,7 +24,7 @@ from .config import (
 )
 from .dose import combined_objective, compute_pattern_dose
 from .metrics import compute_emg_similarity, mean_and_std_over_seeds
-from .patterns import generate_stim_pattern, generate_tonic_pattern
+from .patterns import generate_stim_pattern, generate_tonic_pattern, quantize_theta
 from .utils import ensure_dir, progress, write_json
 
 
@@ -326,9 +326,21 @@ def evaluate_pattern(
     """Evaluate lesion+SCS restoration against the healthy pre-lesion reference."""
 
     healthy_condition, lesion_condition = condition_defaults(config)
-    theta_params = config.theta_bounds.clip(theta)
-    stim_pattern = generate_stim_pattern(theta_params, t_end_ms=config.simulation_duration_ms, dt_ms=config.dt_ms)
-    zero_pattern = generate_tonic_pattern(freq_hz=max(theta_params.f, 1.0), alpha=0.0, t_end_ms=config.simulation_duration_ms, dt_ms=config.dt_ms)
+    theta_params = quantize_theta(config.theta_bounds.clip(theta), config.device_config)
+    stim_pattern = generate_stim_pattern(
+        theta_params,
+        t_end_ms=config.simulation_duration_ms,
+        dt_ms=config.dt_ms,
+        device_config=config.device_config,
+    )
+    zero_pattern = generate_tonic_pattern(
+        freq_hz=max(theta_params.f, 1.0),
+        alpha=0.0,
+        t_end_ms=config.simulation_duration_ms,
+        dt_ms=config.dt_ms,
+        pulse_width_us=config.device_config.default_pulse_width_us,
+        device_config=config.device_config,
+    )
     seeds_tuple = coerce_seed_sequence(seeds, config.seed_config.train_seeds)
 
     structural_state = _make_structural_state(config)
@@ -352,8 +364,12 @@ def evaluate_pattern(
     metric_values: list[float] = []
     raw_dose_values: list[float] = []
     norm_dose_values: list[float] = []
+    device_cost_values: list[float] = []
+    total_current_values: list[float] = []
+    charge_per_pulse_values: list[float] = []
+    charge_rate_values: list[float] = []
     per_seed_records: list[dict[str, Any]] = []
-    raw_dose, norm_dose = compute_pattern_dose(stim_pattern, config.dose_config)
+    dose_metrics = compute_pattern_dose(stim_pattern, config.dose_config, config.device_config)
 
     for lesion_result in lesion_results:
         seed = int(lesion_result.trial_seed)
@@ -366,14 +382,23 @@ def evaluate_pattern(
             use_envelope=config.metric_config.use_envelope,
         )
         metric_values.append(corr)
-        raw_dose_values.append(raw_dose)
-        norm_dose_values.append(norm_dose)
+        raw_dose_values.append(float(dose_metrics["raw_recruitment_dose"]))
+        norm_dose_values.append(float(dose_metrics["recruitment_dose_norm"]))
+        device_cost_values.append(float(dose_metrics["device_cost"]))
+        total_current_values.append(float(dose_metrics["mean_total_current_ma"]))
+        charge_per_pulse_values.append(float(dose_metrics["mean_charge_per_pulse_uc"]))
+        charge_rate_values.append(float(dose_metrics["charge_rate_uc_per_s"]))
         per_seed_records.append(
             {
                 "seed": seed,
                 "corr": float(corr),
-                "raw_dose": float(raw_dose),
-                "norm_dose": float(norm_dose),
+                "raw_recruitment_dose": float(dose_metrics["raw_recruitment_dose"]),
+                "recruitment_dose_norm": float(dose_metrics["recruitment_dose_norm"]),
+                "device_cost": float(dose_metrics["device_cost"]),
+                "total_current_ma": float(dose_metrics["mean_total_current_ma"]),
+                "charge_per_pulse_uc": float(dose_metrics["mean_charge_per_pulse_uc"]),
+                "charge_rate_uc_per_s": float(dose_metrics["charge_rate_uc_per_s"]),
+                "pulse_width_us": float(dose_metrics["pulse_width_us"]),
                 "backend": lesion_result.backend,
                 "condition_label": lesion_result.condition_label,
                 "theta": theta_params.to_dict(),
@@ -383,10 +408,14 @@ def evaluate_pattern(
     mean_corr, std_corr = mean_and_std_over_seeds(metric_values)
     mean_raw_dose, std_raw_dose = mean_and_std_over_seeds(raw_dose_values)
     mean_norm_dose, std_norm_dose = mean_and_std_over_seeds(norm_dose_values)
+    mean_device_cost, std_device_cost = mean_and_std_over_seeds(device_cost_values)
+    mean_total_current_ma, std_total_current_ma = mean_and_std_over_seeds(total_current_values)
+    mean_charge_per_pulse_uc, std_charge_per_pulse_uc = mean_and_std_over_seeds(charge_per_pulse_values)
+    mean_charge_rate_uc_per_s, std_charge_rate_uc_per_s = mean_and_std_over_seeds(charge_rate_values)
     robust_score, penalized_score = combined_objective(
         mean_corr=mean_corr,
         std_corr=std_corr,
-        norm_dose=mean_norm_dose,
+        device_cost=mean_device_cost,
         budget_norm=budget_norm,
         dose_config=config.dose_config,
         robust=robust_objective,
@@ -394,7 +423,7 @@ def evaluate_pattern(
         pulse_alpha=stim_pattern.pulse_alpha,
     )
     feasible_by_budget = {
-        str(budget): bool(mean_norm_dose <= float(budget) + 1e-12)
+        str(budget): bool(mean_device_cost <= float(budget) + 1e-12)
         for budget in config.dose_config.budget_levels
     }
     return EvaluationSummary(
@@ -408,10 +437,22 @@ def evaluate_pattern(
         std_raw_dose=std_raw_dose,
         mean_norm_dose=mean_norm_dose,
         std_norm_dose=std_norm_dose,
+        mean_device_cost=mean_device_cost,
+        std_device_cost=std_device_cost,
+        mean_total_current_ma=mean_total_current_ma,
+        std_total_current_ma=std_total_current_ma,
+        mean_charge_per_pulse_uc=mean_charge_per_pulse_uc,
+        std_charge_per_pulse_uc=std_charge_per_pulse_uc,
+        mean_charge_rate_uc_per_s=mean_charge_rate_uc_per_s,
+        std_charge_rate_uc_per_s=std_charge_rate_uc_per_s,
         penalized_objective=penalized_score,
         robust_objective=robust_score,
         feasible_by_budget=feasible_by_budget,
-        metadata={"budget_norm": budget_norm, "backend": config.backend},
+        metadata={
+            "budget_norm": budget_norm,
+            "backend": config.backend,
+            "pulse_width_us": float(dose_metrics["pulse_width_us"]),
+        },
     )
 
 
@@ -424,6 +465,8 @@ def build_reference_emg_cache(seeds: Iterable[int], config: SimulationConfig) ->
         alpha=0.0,
         t_end_ms=config.simulation_duration_ms,
         dt_ms=config.dt_ms,
+        pulse_width_us=config.device_config.default_pulse_width_us,
+        device_config=config.device_config,
     )
     return {
         result.trial_seed: result.emg_signal

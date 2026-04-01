@@ -8,16 +8,21 @@ Research codebase for the CMU 18-879 mechanistic SCS project on volitional motor
 - The restoration score is Pearson correlation between pre-lesion EMG envelope and lesion+SCS EMG envelope under the same supraspinal drive.
 - This correlation uses full-wave rectified EMG with a 25 ms moving-average envelope.
 - The lesion-without-stimulation correlation against pre-lesion is the baseline to beat and is saved in `results/reference/summary.json`.
-- Dose is in terms of recruited-fiber-pulses, and normalized dose is `raw_dose / (t_end_seconds * 120 Hz)`.
-- A normalized dose of `1.0` means the same recruited-fiber-pulse count as `alpha=1` at `120 Hz` over the full simulation.
 - The default simulation duration is `1000 ms` for the sweep and optimizer runs.
+- The public cost axis is a normalized device-budget approximation:
+  `I_k = 100 * alpha_k mA`, `q_k = I_k * tau`, and
+  `device_cost = sum_k q_k / (T * 100 mA * 1000 us * 1200 Hz)`.
+- This hardware-aware cost is a reporting and constraint layer only; the simulator itself still uses recruitment fraction internally.
+- These hardware limits are taken from the Medtronic Intellis 97715 implant manual:
+  program intensity `0-100 mA`, pulse width `60-1000 us`, master rate `10-1200 Hz`
+  ([manual mirror](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6)).
 
 ## Parameterization
 
 The main stimulation family is:
 
 ```text
-theta = (f, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)
+theta = (f, pulse_width_us, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)
 ```
 
 with:
@@ -34,6 +39,7 @@ T = T_on + T_off
 ```
 
 - Pulses are placed at frequency `f` only during on-windows.
+- `pulse_width_us` is quantized to 10 us steps and bounded to 60-1000 us.
 - `alpha(t)` is evaluated at pulse times and mapped to recruited afferent fraction.
 - Tonic stimulation is the restricted case `T_off=0`, `alpha1=0`, `alpha2=0`.
 - Duty-cycled constant-amplitude stimulation is the restricted case `T_off>=0`, `alpha1=0`, `alpha2=0`.
@@ -42,9 +48,9 @@ T = T_on + T_off
 
 `python scripts/run_grid_sweep.py --output-dir results/grid_sweep` evaluates:
 
-- tonic grid: `12 x 9 = 108` patterns over `(f, alpha0)`
-- duty-cycle grid: `12 x 9 = 108` patterns over `(f, duty_cycle)` at fixed amplitude
-- full-theta Latin hypercube: `256` patterns over the full 8D `theta` space
+- tonic grid: `12 x 9 = 108` patterns over `(f, alpha0)` at fixed `pulse_width_us = 300`
+- duty-cycle grid: `12 x 9 = 108` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`, `pulse_width_us = 300`
+- full-theta Latin hypercube: `256` patterns over the full 9D `theta` space
 
 Total:
 
@@ -77,7 +83,7 @@ python scripts/summarize_results.py --results-root results
 Use this order:
 
 1. Generate pre-lesion and lesion references.
-2. Run the full sweep and inspect the dose-correlation upper hull over evaluated patterns.
+2. Run the full sweep and inspect the device-budget/correlation upper hull over evaluated patterns.
 3. Run CMA-ES, TuRBO, and BOHB.
 4. Summarize combined plots directly under `results/`.
 
@@ -89,11 +95,12 @@ Use this order:
 - train/eval seeds per candidate: `3`
 - reporting seeds: `3`
 - simulation duration: `1000 ms`
+- default pulse width for restricted tonic/duty-cycle sweeps: `300 us`
 - default sweep size: `472` candidate patterns
 - default sweep compute: `472 x 3 = 1416` seed-level trials
 - optimizer fairness budget: `1416` seed-level trials by default, configurable with `--seed-trial-budget`
 - restoration metric: mean seed-averaged EMG-envelope correlation
-- dose normalization reference: `alpha=1` at `120 Hz` over the full run duration
+- device budget normalization reference: `100 mA`, `1000 us`, `1200 Hz` over the full run duration
 - optimizer comparison x-axis: seed-level trials used during search
 
 ## Outputs
@@ -104,16 +111,16 @@ Each run writes:
 - `metrics.jsonl`
 - `metrics.csv`
 - summary JSON
-- `frontier.json` for sweep and optimizer dose-correlation hulls
-- plots where relevant, including local dose-correlation hulls and optimizer best-so-far traces
-- dose-correlation and optimizer-trace plots include a dashed lesion-without-stimulation baseline when `results/reference` exists
+- `frontier.json` for sweep and optimizer device-budget/correlation hulls
+- plots where relevant, including local device-budget/correlation hulls and optimizer best-so-far traces
+- device-budget/correlation and optimizer-trace plots include a dashed lesion-without-stimulation baseline when `results/reference` exists
 
 The optimizer scripts also write:
 
 - `trace.json` with best-so-far correlation versus seed-level trials
 - `best_so_far.png`
-- `dose_vs_corr.png`
-- `dose_vs_corr_with_grid.png` when `results/grid_sweep` exists
+- `device_budget_vs_corr.png`
+- `device_budget_vs_corr_with_grid.png` when `results/grid_sweep` exists
 
 `scripts/summarize_results.py` writes combined plots directly to `results/`:
 

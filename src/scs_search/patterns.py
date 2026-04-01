@@ -6,7 +6,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .config import PatternParameters, SimulationConfig, StimPattern
+from .config import DeviceConfig, PatternParameters, SimulationConfig, StimPattern
 
 
 def clip_recruitment(alpha: np.ndarray | Sequence[float]) -> np.ndarray:
@@ -15,11 +15,38 @@ def clip_recruitment(alpha: np.ndarray | Sequence[float]) -> np.ndarray:
     return np.clip(np.asarray(alpha, dtype=float), 0.0, 1.0)
 
 
-def theta_from_tonic(freq_hz: float, alpha: float, t_end_ms: float) -> PatternParameters:
+def quantize_pulse_width_us(pulse_width_us: float, device_config: DeviceConfig) -> float:
+    """Snap pulse width to the nearest valid device increment."""
+
+    step = float(device_config.pulse_width_step_us)
+    lower = float(device_config.min_pulse_width_us)
+    upper = float(device_config.max_pulse_width_us)
+    quantized = round(float(pulse_width_us) / step) * step
+    return float(np.clip(quantized, lower, upper))
+
+
+def quantize_theta(theta: PatternParameters, device_config: DeviceConfig) -> PatternParameters:
+    """Return theta with pulse width snapped to the allowed device grid."""
+
+    return PatternParameters(
+        f=float(theta.f),
+        pulse_width_us=quantize_pulse_width_us(theta.pulse_width_us, device_config),
+        T_on=float(theta.T_on),
+        T_off=float(theta.T_off),
+        alpha0=float(theta.alpha0),
+        alpha1=float(theta.alpha1),
+        phi1=float(theta.phi1),
+        alpha2=float(theta.alpha2),
+        phi2=float(theta.phi2),
+    )
+
+
+def theta_from_tonic(freq_hz: float, alpha: float, t_end_ms: float, pulse_width_us: float) -> PatternParameters:
     """Build a tonic pattern as a restricted theta vector."""
 
     return PatternParameters(
         f=float(freq_hz),
+        pulse_width_us=float(pulse_width_us),
         T_on=float(t_end_ms),
         T_off=0.0,
         alpha0=float(alpha),
@@ -32,6 +59,7 @@ def theta_from_tonic(freq_hz: float, alpha: float, t_end_ms: float) -> PatternPa
 
 def theta_from_duty_cycle(
     freq_hz: float,
+    pulse_width_us: float,
     alpha: float,
     duty_cycle: float,
     cycle_ms: float,
@@ -41,6 +69,7 @@ def theta_from_duty_cycle(
     duty = float(np.clip(duty_cycle, 0.0, 1.0))
     return PatternParameters(
         f=float(freq_hz),
+        pulse_width_us=float(pulse_width_us),
         T_on=float(cycle_ms * duty),
         T_off=float(cycle_ms * (1.0 - duty)),
         alpha0=float(alpha),
@@ -104,7 +133,7 @@ def _build_pattern(theta: PatternParameters, t_end_ms: float, dt_ms: float, fami
         alpha_t=alpha_t,
         pulse_times_ms=pulse_times_ms,
         pulse_alpha=pulse_alpha,
-        metadata=metadata or {},
+        metadata={"pulse_width_us": float(theta.pulse_width_us), **(metadata or {})},
     )
 
 
@@ -112,17 +141,35 @@ def generate_stim_pattern(
     theta: Sequence[float] | dict[str, float] | PatternParameters,
     t_end_ms: int,
     dt_ms: float = 1.0,
+    device_config: DeviceConfig | None = None,
 ) -> StimPattern:
     """Generate the main Fourier-envelope stimulation structure."""
 
     params = PatternParameters.from_any(theta)
+    if device_config is not None:
+        params = quantize_theta(params, device_config)
     return _build_pattern(params, t_end_ms=float(t_end_ms), dt_ms=dt_ms, family="fourier", metadata={"family": "fourier"})
 
 
-def generate_tonic_pattern(freq_hz: float, alpha: float, t_end_ms: int, dt_ms: float = 1.0) -> StimPattern:
+def generate_tonic_pattern(
+    freq_hz: float,
+    alpha: float,
+    t_end_ms: int,
+    dt_ms: float = 1.0,
+    pulse_width_us: float | None = None,
+    device_config: DeviceConfig | None = None,
+) -> StimPattern:
     """Generate tonic stimulation for debugging and baseline comparisons."""
 
-    theta = theta_from_tonic(freq_hz=freq_hz, alpha=alpha, t_end_ms=t_end_ms)
+    if device_config is None:
+        device_config = DeviceConfig()
+    theta = theta_from_tonic(
+        freq_hz=freq_hz,
+        alpha=alpha,
+        t_end_ms=t_end_ms,
+        pulse_width_us=device_config.default_pulse_width_us if pulse_width_us is None else pulse_width_us,
+    )
+    theta = quantize_theta(theta, device_config)
     return _build_pattern(theta, t_end_ms=float(t_end_ms), dt_ms=dt_ms, family="tonic", metadata={"family": "tonic"})
 
 
@@ -133,10 +180,21 @@ def generate_duty_cycled_constant_pattern(
     t_end_ms: int,
     cycle_ms: float = 500.0,
     dt_ms: float = 1.0,
+    pulse_width_us: float | None = None,
+    device_config: DeviceConfig | None = None,
 ) -> StimPattern:
     """Generate constant-amplitude stimulation gated by an on/off duty cycle."""
 
-    theta = theta_from_duty_cycle(freq_hz=freq_hz, alpha=alpha, duty_cycle=duty_cycle, cycle_ms=cycle_ms)
+    if device_config is None:
+        device_config = DeviceConfig()
+    theta = theta_from_duty_cycle(
+        freq_hz=freq_hz,
+        pulse_width_us=device_config.default_pulse_width_us if pulse_width_us is None else pulse_width_us,
+        alpha=alpha,
+        duty_cycle=duty_cycle,
+        cycle_ms=cycle_ms,
+    )
+    theta = quantize_theta(theta, device_config)
     return _build_pattern(
         theta,
         t_end_ms=float(t_end_ms),
@@ -162,11 +220,18 @@ def pattern_from_family(
     if family_normalized == "fourier":
         if theta is None:
             raise ValueError("Fourier patterns require a theta vector.")
-        return generate_stim_pattern(theta=theta, t_end_ms=t_end_ms, dt_ms=config.dt_ms)
+        return generate_stim_pattern(theta=theta, t_end_ms=t_end_ms, dt_ms=config.dt_ms, device_config=config.device_config)
     if family_normalized == "tonic":
         if freq_hz is None or alpha is None:
             raise ValueError("Tonic patterns require `freq_hz` and `alpha`.")
-        return generate_tonic_pattern(freq_hz=freq_hz, alpha=alpha, t_end_ms=t_end_ms, dt_ms=config.dt_ms)
+        return generate_tonic_pattern(
+            freq_hz=freq_hz,
+            alpha=alpha,
+            t_end_ms=t_end_ms,
+            dt_ms=config.dt_ms,
+            pulse_width_us=config.device_config.default_pulse_width_us,
+            device_config=config.device_config,
+        )
     if family_normalized == "duty_cycle":
         if freq_hz is None or alpha is None or duty_cycle is None:
             raise ValueError("Duty-cycled patterns require `freq_hz`, `alpha`, and `duty_cycle`.")
@@ -177,5 +242,7 @@ def pattern_from_family(
             t_end_ms=t_end_ms,
             cycle_ms=config.baseline_cycle_ms,
             dt_ms=config.dt_ms,
+            pulse_width_us=config.device_config.default_pulse_width_us,
+            device_config=config.device_config,
         )
     raise ValueError(f"Unsupported pattern family: {family}")

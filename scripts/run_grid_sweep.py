@@ -38,6 +38,7 @@ def main() -> None:
         output_dir / "summary.json",
         {
             "preset": "study",
+            "cost_metric": "device_cost",
             "num_records": len(sweep_results["all"]),
             "train_seeds": list(seeds),
             "seed_trials": len(sweep_results["all"]) * len(seeds),

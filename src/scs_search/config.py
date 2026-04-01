@@ -8,7 +8,18 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
-THETA_NAMES: tuple[str, ...] = ("f", "T_on", "T_off", "alpha0", "alpha1", "phi1", "alpha2", "phi2")
+DEFAULT_PULSE_WIDTH_US: float = 300.0
+THETA_NAMES: tuple[str, ...] = (
+    "f",
+    "pulse_width_us",
+    "T_on",
+    "T_off",
+    "alpha0",
+    "alpha1",
+    "phi1",
+    "alpha2",
+    "phi2",
+)
 DEFAULT_BUDGET_LEVELS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
 DEFAULT_SWEEP_EVALUATIONS: int = 472
 DEFAULT_SWEEP_SEED_TRIALS: int = DEFAULT_SWEEP_EVALUATIONS * 3
@@ -39,6 +50,7 @@ class PatternParameters:
     """Main stimulation parameterization."""
 
     f: float
+    pulse_width_us: float
     T_on: float
     T_off: float
     alpha0: float
@@ -55,11 +67,19 @@ class PatternParameters:
             return theta
         if isinstance(theta, Mapping):
             values = dict(theta)
+            if "tau" in values and "pulse_width_us" not in values:
+                values["pulse_width_us"] = values["tau"]
+            if "tau_us" in values and "pulse_width_us" not in values:
+                values["pulse_width_us"] = values["tau_us"]
             if "a1" in values and "alpha1" not in values:
                 values["alpha1"] = values["a1"]
             if "a2" in values and "alpha2" not in values:
                 values["alpha2"] = values["a2"]
+            if "pulse_width_us" not in values:
+                values["pulse_width_us"] = DEFAULT_PULSE_WIDTH_US
             return cls(**{name: float(values[name]) for name in THETA_NAMES})
+        if len(theta) == len(THETA_NAMES) - 1:
+            theta = [theta[0], DEFAULT_PULSE_WIDTH_US, *theta[1:]]
         if len(theta) != len(THETA_NAMES):
             raise ValueError(f"Expected {len(THETA_NAMES)} parameters, received {len(theta)}.")
         return cls(**{name: float(value) for name, value in zip(THETA_NAMES, theta)})
@@ -119,8 +139,8 @@ def default_theta_bounds() -> ParameterBounds:
     """Return the default search box from the study plan."""
 
     return ParameterBounds(
-        lower=(10.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
-        upper=(120.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
+        lower=(10.0, 60.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
+        upper=(1200.0, 1000.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
     )
 
 
@@ -149,10 +169,22 @@ class MetricConfig:
 
 
 @dataclass(frozen=True)
-class DoseConfig:
-    """Configuration for normalized dose and penalties."""
+class DeviceConfig:
+    """Hardware-budget approximation used for reporting and constraints."""
 
-    max_frequency_hz: float = 120.0
+    max_total_current_ma: float = 100.0
+    min_pulse_width_us: float = 60.0
+    max_pulse_width_us: float = 1000.0
+    pulse_width_step_us: float = 10.0
+    max_master_rate_hz: float = 1200.0
+    default_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
+
+
+@dataclass(frozen=True)
+class DoseConfig:
+    """Configuration for internal recruitment diagnostics and budget penalties."""
+
+    max_frequency_hz: float = 1200.0
     budget_levels: tuple[float, ...] = DEFAULT_BUDGET_LEVELS
     objective_penalty_weight: float = 10.0
     robust_std_weight: float = 0.25
@@ -188,6 +220,7 @@ class SimulationConfig:
     theta_bounds: ParameterBounds = field(default_factory=default_theta_bounds)
     seed_config: SeedConfig = field(default_factory=SeedConfig)
     metric_config: MetricConfig = field(default_factory=MetricConfig)
+    device_config: DeviceConfig = field(default_factory=DeviceConfig)
     dose_config: DoseConfig = field(default_factory=DoseConfig)
 
 
@@ -243,6 +276,14 @@ class EvaluationSummary:
     std_raw_dose: float
     mean_norm_dose: float
     std_norm_dose: float
+    mean_device_cost: float
+    std_device_cost: float
+    mean_total_current_ma: float
+    std_total_current_ma: float
+    mean_charge_per_pulse_uc: float
+    std_charge_per_pulse_uc: float
+    mean_charge_rate_uc_per_s: float
+    std_charge_rate_uc_per_s: float
     penalized_objective: float
     robust_objective: float
     feasible_by_budget: dict[str, bool]
@@ -297,6 +338,7 @@ def dataclass_config_bundle(
         "simulation": simulation_config,
         "seed_config": simulation_config.seed_config,
         "metric_config": simulation_config.metric_config,
+        "device_config": simulation_config.device_config,
         "dose_config": simulation_config.dose_config,
         "theta_bounds": simulation_config.theta_bounds,
     }
