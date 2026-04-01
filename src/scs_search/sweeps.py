@@ -7,21 +7,69 @@ from typing import Iterable
 import numpy as np
 
 from .analysis import build_best_under_limit_frontier, summary_to_record
-from .config import PatternParameters, SimulationConfig
+from .config import DEFAULT_SWEEP_SEED_TRIALS, PatternParameters, SimulationConfig
 from .patterns import theta_from_duty_cycle, theta_from_tonic
 from .simulator_adapter import evaluate_pattern
 from .utils import latin_hypercube_samples, progress
 
 
-def sweep_grid_values() -> dict[str, np.ndarray]:
-    """Return the default sweep preset used for the main experiments."""
+def _split_counts(total: int, proportions: tuple[float, ...]) -> list[int]:
+    """Split an integer total according to proportions with exact summation."""
+
+    if total <= 0:
+        return [0 for _ in proportions]
+    raw = [total * weight for weight in proportions]
+    counts = [int(np.floor(value)) for value in raw]
+    remainder = total - sum(counts)
+    order = sorted(range(len(raw)), key=lambda idx: raw[idx] - counts[idx], reverse=True)
+    for idx in order[:remainder]:
+        counts[idx] += 1
+    return counts
+
+
+def _grid_shape_for_budget(target: int, preferred_rows: int, preferred_cols: int) -> tuple[int, int]:
+    """Choose a rectangular grid shape under a target count."""
+
+    if target <= 1:
+        return (1, max(1, target))
+
+    preferred_ratio = preferred_rows / preferred_cols
+    best_rows = 1
+    best_cols = target
+    best_points = 0
+    best_ratio_error = float("inf")
+    for rows in range(1, target + 1):
+        cols = max(1, target // rows)
+        points = rows * cols
+        ratio_error = abs((rows / cols) - preferred_ratio)
+        if points > best_points or (points == best_points and ratio_error < best_ratio_error):
+            best_rows = rows
+            best_cols = cols
+            best_points = points
+            best_ratio_error = ratio_error
+    return best_rows, best_cols
+
+
+def sweep_grid_values(
+    seed_trial_budget: int = DEFAULT_SWEEP_SEED_TRIALS,
+    seed_count: int = 1,
+) -> dict[str, np.ndarray]:
+    """Derive a sweep preset from the requested seed-trial budget."""
+
+    candidate_budget = max(1, int(seed_trial_budget) // max(1, int(seed_count)))
+    tonic_target, duty_target, lhs_target = _split_counts(candidate_budget, (0.2, 0.2, 0.6))
+    tonic_rows, tonic_cols = _grid_shape_for_budget(tonic_target, preferred_rows=4, preferred_cols=5)
+    duty_rows, duty_cols = _grid_shape_for_budget(duty_target, preferred_rows=4, preferred_cols=5)
+    actual_tonic = tonic_rows * tonic_cols
+    actual_duty = duty_rows * duty_cols
+    lhs_count = max(1, candidate_budget - actual_tonic - actual_duty)
 
     return {
-        "tonic_freqs": np.linspace(10.0, 1200.0, num=4),
-        "tonic_alpha": np.linspace(0.1, 0.9, num=5),
-        "duty_freqs": np.linspace(10.0, 1200.0, num=4),
-        "duty_cycle": np.linspace(0.1, 0.9, num=5),
-        "full_theta_samples": np.asarray([60]),
+        "tonic_freqs": np.linspace(10.0, 1200.0, num=tonic_rows),
+        "tonic_alpha": np.linspace(0.1, 0.9, num=tonic_cols),
+        "duty_freqs": np.linspace(10.0, 1200.0, num=duty_rows),
+        "duty_cycle": np.linspace(0.1, 0.9, num=duty_cols),
+        "full_theta_samples": np.asarray([lhs_count]),
     }
 
 
@@ -99,20 +147,22 @@ def run_sweep_suite(
     config: SimulationConfig,
     seeds: Iterable[int],
     *,
+    seed_trial_budget: int = DEFAULT_SWEEP_SEED_TRIALS,
     duty_cycle_alpha: float = 0.5,
     lhs_seed: int = 123,
     reference_emg_by_seed: dict[int, np.ndarray] | None = None,
 ) -> dict[str, list[dict]]:
     """Run the tonic, duty-cycle, and full-theta sweep suite."""
 
-    preset = sweep_grid_values()
+    seeds_tuple = tuple(int(seed) for seed in seeds)
+    preset = sweep_grid_values(seed_trial_budget=seed_trial_budget, seed_count=len(seeds_tuple))
     tonic_records = evaluate_theta_set(
         tonic_grid_points(
             preset["tonic_freqs"],
             preset["tonic_alpha"],
             config.simulation_duration_ms,
         ),
-        seeds=seeds,
+        seeds=seeds_tuple,
         config=config,
         label="tonic",
         reference_emg_by_seed=reference_emg_by_seed,
@@ -124,14 +174,14 @@ def run_sweep_suite(
             alpha=duty_cycle_alpha,
             cycle_ms=config.baseline_cycle_ms,
         ),
-        seeds=seeds,
+        seeds=seeds_tuple,
         config=config,
         label="duty_cycle",
         reference_emg_by_seed=reference_emg_by_seed,
     )
     full_records = evaluate_theta_set(
         full_space_lhs_points(config, int(preset["full_theta_samples"][0]), seed=lhs_seed),
-        seeds=seeds,
+        seeds=seeds_tuple,
         config=config,
         label="lhs_full_theta",
         reference_emg_by_seed=reference_emg_by_seed,
@@ -144,4 +194,12 @@ def run_sweep_suite(
         "lhs_full_theta": full_records,
         "all": all_records,
         "frontier": frontier,
+        "preset": {
+            "seed_trial_budget": int(seed_trial_budget),
+            "seed_count": len(seeds_tuple),
+            "candidate_budget": max(1, int(seed_trial_budget) // max(1, len(seeds_tuple))),
+            "tonic": len(tonic_records),
+            "duty_cycle": len(duty_records),
+            "lhs_full_theta": len(full_records),
+        },
     }

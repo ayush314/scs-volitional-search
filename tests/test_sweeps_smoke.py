@@ -6,7 +6,7 @@ import numpy as np
 
 from scs_search.config import EvaluationSummary, PatternParameters, SimulationConfig
 from scs_search.plotting import plot_frontier
-from scs_search.sweeps import run_sweep_suite
+from scs_search.sweeps import run_sweep_suite, sweep_grid_values
 
 
 def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> EvaluationSummary:
@@ -44,7 +44,7 @@ def test_run_sweep_suite_emits_device_cost_records(tmp_path, monkeypatch) -> Non
 
     monkeypatch.setattr(
         "scs_search.sweeps.sweep_grid_values",
-        lambda: {
+        lambda seed_trial_budget=100, seed_count=1: {
             "tonic_freqs": np.asarray([10.0, 20.0]),
             "tonic_alpha": np.asarray([0.2, 0.4]),
             "duty_freqs": np.asarray([15.0]),
@@ -57,12 +57,21 @@ def test_run_sweep_suite_emits_device_cost_records(tmp_path, monkeypatch) -> Non
         lambda theta, seeds, config, **_: _fake_summary(theta, tuple(int(seed) for seed in seeds)),
     )
 
-    results = run_sweep_suite(config, seeds=(101,), reference_emg_by_seed={101: np.zeros(8)})
+    results = run_sweep_suite(config, seeds=(101,), seed_trial_budget=7, reference_emg_by_seed={101: np.zeros(8)})
 
     assert results["all"]
     assert all("device_cost" in record for record in results["all"])
     assert all("theta_T_on" in record for record in results["all"])
+    assert results["preset"]["seed_trial_budget"] == 7
 
     output_path = tmp_path / "frontier.png"
     plot_frontier(results["all"], results["frontier"], output_path)
     assert output_path.exists()
+
+
+def test_sweep_grid_values_allocates_from_seed_trial_budget() -> None:
+    preset = sweep_grid_values(seed_trial_budget=100, seed_count=1)
+
+    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) == 20
+    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) == 20
+    assert int(preset["full_theta_samples"][0]) == 60

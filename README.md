@@ -37,16 +37,24 @@ In words, `device_cost` is the fraction of the study's maximum current-rate usag
 
 ## Runs
 
+Run the full pipeline with one command:
+
+```bash
+python scripts/run_all.py --results-root results --seed-trial-budget 100
+```
+
+Or run the stages individually:
+
 ```bash
 python scripts/run_prelesion_reference.py --output-dir results/reference
-python scripts/run_grid_sweep.py --output-dir results/grid_sweep
+python scripts/run_grid_sweep.py --seed-trial-budget 100 --output-dir results/grid_sweep
 python scripts/run_cmaes.py --seed-trial-budget 100 --output-dir results/cmaes
 python scripts/run_turbo.py --seed-trial-budget 100 --output-dir results/turbo
 python scripts/run_bohb.py --seed-trial-budget 100 --output-dir results/bohb
 python scripts/summarize_results.py --results-root results
 ```
 
-Run the scripts in that order:
+If you run the stages manually, use them in that order:
 - `run_prelesion_reference.py` builds the healthy target and lesion-no-stim reference condition.
 - `run_grid_sweep.py` samples the stimulation space broadly and produces the sweep frontier.
 - `run_cmaes.py`, `run_turbo.py`, and `run_bohb.py` apply the three adaptive search methods under matched seed-level compute.
@@ -56,8 +64,8 @@ Run the scripts in that order:
 
 - Simulation duration: `1000 ms`
 - Lesion severity: `perc_supra_intact = 0.2`
-- Sweep: `100` candidates total = `20` tonic + `20` duty-cycle + `60` full-theta LHS
-- Sweep evaluation policy: `1` fixed train seed per candidate for coverage
+- Sweep budget: `100` seed-level trials by default with `1` fixed train seed per candidate for coverage
+- Sweep allocation: `~20%` tonic candidates, `~20%` duty-cycle candidates, and `~60%` Latin hypercube samples over the full 8-parameter space
 - Optimizer training seeds: up to `3` per candidate
 - Optimizer budget: `100` seed-level trials by default
 - Final reporting seeds: `3`
