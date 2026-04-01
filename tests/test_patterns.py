@@ -9,7 +9,7 @@ from scs_search.patterns import generate_duty_cycled_constant_pattern, generate_
 
 
 def test_tonic_pattern_pulse_count_matches_frequency() -> None:
-    pattern = generate_tonic_pattern(freq_hz=20.0, alpha=0.5, t_end_ms=1000, pulse_width_us=300.0)
+    pattern = generate_tonic_pattern(freq_hz=20.0, alpha=0.5, t_end_ms=1000)
     assert len(pattern.pulse_times_ms) == 20
     assert np.allclose(pattern.pulse_alpha, 0.5)
 
@@ -21,7 +21,6 @@ def test_duty_cycle_turns_stimulation_off_between_windows() -> None:
         duty_cycle=0.5,
         t_end_ms=1000,
         cycle_ms=200.0,
-        pulse_width_us=300.0,
     )
     assert np.all(pattern.alpha_t[100:200] == 0.0)
     assert np.all(pattern.alpha_t[:100] == 0.5)
@@ -30,7 +29,6 @@ def test_duty_cycle_turns_stimulation_off_between_windows() -> None:
 def test_fourier_pattern_clips_envelope() -> None:
     theta = PatternParameters(
         f=50.0,
-        pulse_width_us=300.0,
         T_on=100.0,
         T_off=100.0,
         alpha0=0.8,
@@ -47,7 +45,6 @@ def test_fourier_pattern_clips_envelope() -> None:
 def test_pulse_phase_resets_each_on_window() -> None:
     theta = PatternParameters(
         f=10.0,
-        pulse_width_us=300.0,
         T_on=100.0,
         T_off=100.0,
         alpha0=0.5,
@@ -60,11 +57,10 @@ def test_pulse_phase_resets_each_on_window() -> None:
     assert np.allclose(pattern.pulse_times_ms, np.array([0.0, 200.0, 400.0]))
 
 
-def test_pulse_width_is_quantized_to_device_step() -> None:
+def test_fixed_pulse_width_is_attached_from_device_config() -> None:
     device = DeviceConfig()
     theta = PatternParameters(
         f=50.0,
-        pulse_width_us=333.0,
         T_on=100.0,
         T_off=0.0,
         alpha0=0.5,
@@ -74,5 +70,4 @@ def test_pulse_width_is_quantized_to_device_step() -> None:
         phi2=0.0,
     )
     pattern = generate_stim_pattern(theta, t_end_ms=200, device_config=device)
-    assert pattern.metadata["pulse_width_us"] == 330.0
-    assert pattern.theta.pulse_width_us == 330.0
+    assert pattern.metadata["pulse_width_us"] == device.fixed_pulse_width_us

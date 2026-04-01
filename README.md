@@ -16,13 +16,15 @@ Research codebase for the CMU 18-879 mechanistic SCS project on volitional motor
 - These hardware limits are taken from the Medtronic Intellis 97715 implant manual:
   program intensity `0-100 mA`, pulse width `60-1000 us`, master rate `10-1200 Hz`
   ([manual mirror](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6)).
+- Pulse width is fixed at `210 us` based on human epidural SCS motor studies
+  ([review](https://pmc.ncbi.nlm.nih.gov/articles/PMC10208259/)).
 
 ## Parameterization
 
 The main stimulation family is:
 
 ```text
-theta = (f, pulse_width_us, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)
+theta = (f, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)
 ```
 
 with:
@@ -39,8 +41,8 @@ T = T_on + T_off
 ```
 
 - Pulses are placed at frequency `f` only during on-windows.
-- `pulse_width_us` is quantized to 10 us steps and bounded to 60-1000 us.
 - `alpha(t)` is evaluated at pulse times and mapped to recruited afferent fraction.
+- Pulse width is fixed at `210 us` for all evaluated patterns.
 - Tonic stimulation is the restricted case `T_off=0`, `alpha1=0`, `alpha2=0`.
 - Duty-cycled constant-amplitude stimulation is the restricted case `T_off>=0`, `alpha1=0`, `alpha2=0`.
 
@@ -48,9 +50,9 @@ T = T_on + T_off
 
 `python scripts/run_grid_sweep.py --output-dir results/grid_sweep` evaluates:
 
-- tonic grid: `8 x 6 = 48` patterns over `(f, alpha0)` at fixed `pulse_width_us = 300`
-- duty-cycle grid: `8 x 6 = 48` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`, `pulse_width_us = 300`
-- full-theta Latin hypercube: `104` patterns over the full 9D `theta` space
+- tonic grid: `8 x 6 = 48` patterns over `(f, alpha0)`
+- duty-cycle grid: `8 x 6 = 48` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`
+- full-theta Latin hypercube: `104` patterns over the full 8D `theta` space
 
 Total:
 
@@ -95,7 +97,7 @@ Use this order:
 - train/eval seeds per candidate: `3`
 - reporting seeds: `3`
 - simulation duration: `1000 ms`
-- default pulse width for restricted tonic/duty-cycle sweeps: `300 us`
+- fixed pulse width for all runs: `210 us`
 - default sweep size: `200` candidate patterns
 - default sweep compute: `200 x 3 = 600` seed-level trials
 - optimizer fairness budget: `600` seed-level trials by default, configurable with `--seed-trial-budget`

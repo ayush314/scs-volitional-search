@@ -29,7 +29,6 @@ def tonic_grid_points(
     freq_values: Iterable[float],
     alpha_values: Iterable[float],
     duration_ms: int,
-    pulse_width_us: float,
 ) -> list[PatternParameters]:
     """Generate theta values for the tonic slice."""
 
@@ -38,7 +37,6 @@ def tonic_grid_points(
             freq_hz=float(freq_hz),
             alpha=float(alpha),
             t_end_ms=float(duration_ms),
-            pulse_width_us=float(pulse_width_us),
         )
         for freq_hz in freq_values
         for alpha in alpha_values
@@ -50,14 +48,12 @@ def duty_cycle_grid_points(
     duty_cycle_values: Iterable[float],
     alpha: float,
     cycle_ms: float,
-    pulse_width_us: float,
 ) -> list[PatternParameters]:
     """Generate theta values for the duty-cycle slice."""
 
     return [
         theta_from_duty_cycle(
             freq_hz=float(freq_hz),
-            pulse_width_us=float(pulse_width_us),
             alpha=float(alpha),
             duty_cycle=float(duty_cycle),
             cycle_ms=float(cycle_ms),
@@ -115,7 +111,6 @@ def run_sweep_suite(
             preset["tonic_freqs"],
             preset["tonic_alpha"],
             config.simulation_duration_ms,
-            config.device_config.default_pulse_width_us,
         ),
         seeds=seeds,
         config=config,
@@ -128,7 +123,6 @@ def run_sweep_suite(
             duty_cycle_values=preset["duty_cycle"],
             alpha=duty_cycle_alpha,
             cycle_ms=config.baseline_cycle_ms,
-            pulse_width_us=config.device_config.default_pulse_width_us,
         ),
         seeds=seeds,
         config=config,

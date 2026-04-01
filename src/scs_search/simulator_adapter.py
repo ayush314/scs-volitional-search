@@ -24,7 +24,7 @@ from .config import (
 )
 from .dose import combined_objective, compute_pattern_dose
 from .metrics import compute_emg_similarity, mean_and_std_over_seeds
-from .patterns import generate_stim_pattern, generate_tonic_pattern, quantize_theta
+from .patterns import generate_stim_pattern, generate_tonic_pattern
 from .utils import ensure_dir, progress, write_json
 
 
@@ -326,7 +326,7 @@ def evaluate_pattern(
     """Evaluate lesion+SCS restoration against the healthy pre-lesion reference."""
 
     healthy_condition, lesion_condition = condition_defaults(config)
-    theta_params = quantize_theta(config.theta_bounds.clip(theta), config.device_config)
+    theta_params = config.theta_bounds.clip(theta)
     stim_pattern = generate_stim_pattern(
         theta_params,
         t_end_ms=config.simulation_duration_ms,
@@ -338,7 +338,6 @@ def evaluate_pattern(
         alpha=0.0,
         t_end_ms=config.simulation_duration_ms,
         dt_ms=config.dt_ms,
-        pulse_width_us=config.device_config.default_pulse_width_us,
         device_config=config.device_config,
     )
     seeds_tuple = coerce_seed_sequence(seeds, config.seed_config.train_seeds)
@@ -465,7 +464,6 @@ def build_reference_emg_cache(seeds: Iterable[int], config: SimulationConfig) ->
         alpha=0.0,
         t_end_ms=config.simulation_duration_ms,
         dt_ms=config.dt_ms,
-        pulse_width_us=config.device_config.default_pulse_width_us,
         device_config=config.device_config,
     )
     return {

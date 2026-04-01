@@ -34,7 +34,6 @@ def main() -> None:
         alpha=0.0,
         t_end_ms=config.simulation_duration_ms,
         dt_ms=config.dt_ms,
-        pulse_width_us=config.device_config.default_pulse_width_us,
         device_config=config.device_config,
     )
 

@@ -8,10 +8,9 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
-DEFAULT_PULSE_WIDTH_US: float = 300.0
+DEFAULT_PULSE_WIDTH_US: float = 210.0
 THETA_NAMES: tuple[str, ...] = (
     "f",
-    "pulse_width_us",
     "T_on",
     "T_off",
     "alpha0",
@@ -50,7 +49,6 @@ class PatternParameters:
     """Main stimulation parameterization."""
 
     f: float
-    pulse_width_us: float
     T_on: float
     T_off: float
     alpha0: float
@@ -67,19 +65,13 @@ class PatternParameters:
             return theta
         if isinstance(theta, Mapping):
             values = dict(theta)
-            if "tau" in values and "pulse_width_us" not in values:
-                values["pulse_width_us"] = values["tau"]
-            if "tau_us" in values and "pulse_width_us" not in values:
-                values["pulse_width_us"] = values["tau_us"]
             if "a1" in values and "alpha1" not in values:
                 values["alpha1"] = values["a1"]
             if "a2" in values and "alpha2" not in values:
                 values["alpha2"] = values["a2"]
-            if "pulse_width_us" not in values:
-                values["pulse_width_us"] = DEFAULT_PULSE_WIDTH_US
             return cls(**{name: float(values[name]) for name in THETA_NAMES})
-        if len(theta) == len(THETA_NAMES) - 1:
-            theta = [theta[0], DEFAULT_PULSE_WIDTH_US, *theta[1:]]
+        if len(theta) == len(THETA_NAMES) + 1:
+            theta = [theta[0], *theta[2:]]
         if len(theta) != len(THETA_NAMES):
             raise ValueError(f"Expected {len(THETA_NAMES)} parameters, received {len(theta)}.")
         return cls(**{name: float(value) for name, value in zip(THETA_NAMES, theta)})
@@ -139,8 +131,8 @@ def default_theta_bounds() -> ParameterBounds:
     """Return the default search box from the study plan."""
 
     return ParameterBounds(
-        lower=(10.0, 60.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
-        upper=(1200.0, 1000.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
+        lower=(10.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
+        upper=(1200.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
     )
 
 
@@ -177,7 +169,7 @@ class DeviceConfig:
     max_pulse_width_us: float = 1000.0
     pulse_width_step_us: float = 10.0
     max_master_rate_hz: float = 1200.0
-    default_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
+    fixed_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
 
 
 @dataclass(frozen=True)

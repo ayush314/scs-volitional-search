@@ -57,7 +57,7 @@ def compute_pattern_dose(pattern: StimPattern, dose_config: DoseConfig, device_c
     """Compute internal recruitment dose and public hardware-budget metrics."""
 
     duration_ms = pattern.time_ms[-1] + 1.0 if pattern.time_ms.size else 1.0
-    pulse_width_us = float(pattern.metadata.get("pulse_width_us", pattern.theta.pulse_width_us))
+    pulse_width_us = float(pattern.metadata.get("pulse_width_us", device_config.fixed_pulse_width_us))
     raw_recruitment_dose = raw_dose_from_pulse_alpha(pattern.pulse_alpha)
     recruitment_dose_norm = normalized_recruitment_dose(
         raw_recruitment_dose,

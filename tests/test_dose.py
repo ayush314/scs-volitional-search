@@ -22,13 +22,12 @@ def test_device_cost_matches_full_hardware_reference() -> None:
         max_pulse_width_us=1000.0,
         pulse_width_step_us=10.0,
         max_master_rate_hz=1200.0,
-        default_pulse_width_us=1000.0,
+        fixed_pulse_width_us=1000.0,
     )
     pattern = generate_tonic_pattern(
         freq_hz=1200.0,
         alpha=1.0,
         t_end_ms=1000,
-        pulse_width_us=1000.0,
         device_config=device_config,
     )
     metrics = compute_pattern_dose(pattern, dose_config, device_config)
@@ -39,12 +38,11 @@ def test_device_cost_matches_full_hardware_reference() -> None:
 
 def test_device_cost_scales_with_shorter_pulse_width() -> None:
     dose_config = DoseConfig(max_frequency_hz=1200.0)
-    device_config = DeviceConfig(default_pulse_width_us=500.0)
+    device_config = DeviceConfig(fixed_pulse_width_us=500.0)
     pattern = generate_tonic_pattern(
         freq_hz=1200.0,
         alpha=1.0,
         t_end_ms=1000,
-        pulse_width_us=500.0,
         device_config=device_config,
     )
     metrics = compute_pattern_dose(pattern, dose_config, device_config)

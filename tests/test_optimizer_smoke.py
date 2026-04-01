@@ -19,7 +19,8 @@ _RUN_BOHB_SPEC.loader.exec_module(run_bohb)
 
 
 def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> EvaluationSummary:
-    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) * float(theta.pulse_width_us) / (1200.0 * 1000.0))
+    pulse_width_us = 210.0
+    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) * pulse_width_us / (1200.0 * 1000.0))
     corr = 1.0 - device_cost
     return EvaluationSummary(
         theta=theta,
@@ -36,21 +37,20 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_device_cost=0.0,
         mean_total_current_ma=100.0 * float(theta.alpha0),
         std_total_current_ma=0.0,
-        mean_charge_per_pulse_uc=float(theta.alpha0) * float(theta.pulse_width_us) / 10.0,
+        mean_charge_per_pulse_uc=float(theta.alpha0) * pulse_width_us / 10.0,
         std_charge_per_pulse_uc=0.0,
         mean_charge_rate_uc_per_s=device_cost * 120000.0,
         std_charge_rate_uc_per_s=0.0,
         penalized_objective=corr,
         robust_objective=corr,
         feasible_by_budget={"1.0": True},
-        metadata={"pulse_width_us": float(theta.pulse_width_us)},
+        metadata={"pulse_width_us": pulse_width_us},
     )
 
 
 def test_run_bohb_writes_device_cost_outputs(tmp_path, monkeypatch) -> None:
     theta = PatternParameters(
         f=40.0,
-        pulse_width_us=300.0,
         T_on=100.0,
         T_off=50.0,
         alpha0=0.5,
@@ -84,5 +84,5 @@ def test_run_bohb_writes_device_cost_outputs(tmp_path, monkeypatch) -> None:
 
     assert rows
     assert "device_cost" in rows[0]
-    assert "theta_pulse_width_us" in rows[0]
+    assert "theta_T_on" in rows[0]
     assert (output_dir / "device_budget_vs_corr.png").exists()
