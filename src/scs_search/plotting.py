@@ -51,17 +51,17 @@ def plot_emg_examples(
     plt.close(fig)
 
 
-def _scatter_with_hull(
+def _scatter_with_frontier(
     ax: plt.Axes,
     records: Iterable[Mapping[str, float]],
     frontier: Iterable[Mapping[str, float]],
     *,
     color: str,
     scatter_label: str,
-    hull_label: str,
+    frontier_label: str,
     scatter_alpha: float = 0.4,
 ) -> None:
-    """Plot evaluated points together with an upper-hull overlay."""
+    """Plot evaluated points together with a best-under-limit frontier."""
 
     records_list = list(records)
     if records_list:
@@ -76,13 +76,13 @@ def _scatter_with_hull(
 
     frontier_list = list(frontier)
     if frontier_list:
-        ax.plot(
+        ax.step(
             [_cost_value(record) for record in frontier_list],
             [float(record["mean_corr"]) for record in frontier_list],
-            marker="o",
+            where="post",
             linewidth=1.5,
             color=color,
-            label=hull_label,
+            label=frontier_label,
         )
 
 
@@ -94,23 +94,23 @@ def plot_frontier(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot restoration vs normalized device budget with the upper-hull overlay."""
+    """Plot restoration vs normalized device usage limit with the frontier overlay."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
-    _scatter_with_hull(
+    _scatter_with_frontier(
         ax,
         records,
         frontier,
         color="C0",
         scatter_label="Evaluated patterns",
-        hull_label="Upper hull",
+        frontier_label="Best observed under limit",
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized device budget usage")
+    ax.set_xlabel("Normalized device usage limit")
     ax.set_ylabel("EMG restoration correlation")
-    ax.set_title("Device budget vs restoration hull")
+    ax.set_title("Device usage limit vs restoration")
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=200)
@@ -129,32 +129,32 @@ def plot_frontier_overlay(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot one device-budget/correlation hull on top of another reference hull."""
+    """Plot one device-usage frontier on top of another reference frontier."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
-    _scatter_with_hull(
+    _scatter_with_frontier(
         ax,
         base_records,
         base_frontier,
         color="0.7",
         scatter_label=f"{base_name} patterns",
-        hull_label=f"{base_name} hull",
+        frontier_label=f"{base_name} frontier",
         scatter_alpha=0.25,
     )
-    _scatter_with_hull(
+    _scatter_with_frontier(
         ax,
         overlay_records,
         overlay_frontier,
         color="C1",
         scatter_label=f"{overlay_name} patterns",
-        hull_label=f"{overlay_name} hull",
+        frontier_label=f"{overlay_name} frontier",
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized device budget usage")
+    ax.set_xlabel("Normalized device usage limit")
     ax.set_ylabel("EMG restoration correlation")
-    ax.set_title(f"Device budget vs restoration: {overlay_name} over {base_name}")
+    ax.set_title(f"Device usage limit vs restoration: {overlay_name} over {base_name}")
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=200)

@@ -7,7 +7,7 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 
-from scs_search.analysis import best_so_far_trace, build_upper_hull_frontier, reference_baseline_stats
+from scs_search.analysis import best_so_far_trace, build_best_under_limit_frontier, reference_baseline_stats
 from scs_search.config import DEFAULT_SWEEP_SEED_TRIALS, OptimizerConfig, SimulationConfig, dataclass_config_bundle
 from scs_search.optimizers.turbo_runner import run_optimizer
 from scs_search.plotting import plot_best_so_far, plot_frontier, plot_frontier_overlay
@@ -29,7 +29,7 @@ def main() -> None:
     result = run_optimizer({"simulation": simulation, "optimizer": optimizer}, str(output_dir))
     history = result.history
     trace = best_so_far_trace(history, budget_norm=optimizer.budget_norm)
-    frontier = build_upper_hull_frontier(history)
+    frontier = build_best_under_limit_frontier(history)
     baseline = reference_baseline_stats(Path(output_dir).parent / "reference", simulation.metric_config)
 
     write_json(output_dir / "config.json", dataclass_config_bundle(simulation, optimizer))

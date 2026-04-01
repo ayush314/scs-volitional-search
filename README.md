@@ -30,12 +30,10 @@ We chose this pattern family as a compromise between flexibility and tractabilit
 The y-axis is restoration correlation. For each seed, the healthy pre-lesion EMG trace is compared with the lesion + SCS EMG trace from the same fine-motor task. Both traces are rectified and smoothed with a `25 ms` moving-average window, then scored by Pearson correlation. Lesion without stimulation is also generated as a reference condition, but the main study is broader than just the unstimulated lesion comparison: the grid sweep maps the pattern space, and the optimizers are compared by how efficiently they find high-correlation patterns.
 
 The x-axis is a hardware-aware cost metric,
-`device_cost = sum_k q_k / (T_run * 100 mA * 1000 us * 1200 Hz)`,
-with `q_k = (100 mA * alpha_k) * 210 us`.
-In words, `device_cost` is delivered charge divided by the maximum charge the device could have delivered over the same run under Medtronic-style limits of `0-100 mA`, `60-1000 us`, and `10-1200 Hz`:
+`device_cost = sum_k I_k / (T_run * 50 mA * 1200 Hz)`,
+with `I_k = 50 mA * alpha_k`.
+In words, `device_cost` is the fraction of the study's maximum current-rate usage reached by the pattern under a `50 mA` program-current cap and the device's `10-1200 Hz` rate range:
 [`Medtronic Intellis 97715 manual mirror`](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6)
-We fix pulse width at `210 us` for the current study; that choice is within the motor-control epidural SCS range summarized here:
-[`motor-control epidural SCS review`](https://pmc.ncbi.nlm.nih.gov/articles/PMC10208259/)
 
 ## Runs
 
@@ -75,14 +73,14 @@ Run the scripts in that order:
   - `config.json`: sweep settings
   - `metrics.jsonl`, `metrics.csv`: one row per sampled candidate
   - `summary.json`: candidate count and seed-level trial count
-  - `frontier.json`: sweep hull
-  - `frontier.png`: sampled candidates and sweep frontier
+  - `frontier.json`: best observed correlation under each sampled device-usage limit
+  - `frontier.png`: sampled candidates and the sweep frontier
 - `results/cmaes/`, `results/turbo/`, `results/bohb/`
   - `config.json`: optimizer settings
   - `history.json`, `metrics.jsonl`, `metrics.csv`: candidate evaluations during search
   - `trace.json`: best-so-far progress
   - `summary.json`: final incumbent summary
-  - `frontier.json`: that method's hull
+  - `frontier.json`: that method's best observed correlation under each sampled usage limit
   - `best_so_far.png`: search progress versus seed-level trials
   - `device_budget_vs_corr.png`: that method's visited device-cost/correlation region
   - `device_budget_vs_corr_with_grid.png`: overlay against the grid sweep when sweep outputs are present

@@ -162,7 +162,7 @@ class MetricConfig:
 class DeviceConfig:
     """Hardware-budget approximation used for reporting and constraints."""
 
-    max_total_current_ma: float = 100.0
+    max_total_current_ma: float = 50.0
     min_pulse_width_us: float = 60.0
     max_pulse_width_us: float = 1000.0
     pulse_width_step_us: float = 10.0

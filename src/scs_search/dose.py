@@ -38,19 +38,14 @@ def pulse_charge_uc(pulse_current_ma: Sequence[float], pulse_width_us: float) ->
     return current_ma * float(pulse_width_us) / 1000.0
 
 
-def normalized_device_cost(total_charge_uc: float, duration_ms: float, device_config: DeviceConfig) -> float:
-    """Normalize charge rate by the device maximum current/width/rate envelope."""
+def normalized_device_cost(total_current_pulse_ma: float, duration_ms: float, device_config: DeviceConfig) -> float:
+    """Normalize current-rate usage by the device maximum current/rate envelope."""
 
     duration_seconds = float(duration_ms) / 1000.0
     if duration_seconds <= 0:
         raise ValueError("Duration must be positive when normalizing device cost.")
-    max_charge_rate_uc_per_s = (
-        float(device_config.max_total_current_ma)
-        * float(device_config.max_pulse_width_us)
-        / 1000.0
-        * float(device_config.max_master_rate_hz)
-    )
-    return float(total_charge_uc / duration_seconds) / max_charge_rate_uc_per_s
+    max_current_rate_ma_per_s = float(device_config.max_total_current_ma) * float(device_config.max_master_rate_hz)
+    return float(total_current_pulse_ma / duration_seconds) / max_current_rate_ma_per_s
 
 
 def compute_pattern_dose(pattern: StimPattern, dose_config: DoseConfig, device_config: DeviceConfig) -> dict[str, float]:
@@ -66,11 +61,12 @@ def compute_pattern_dose(pattern: StimPattern, dose_config: DoseConfig, device_c
     )
 
     currents_ma = pulse_currents_ma(pattern.pulse_alpha, device_config)
+    total_current_pulse_ma = float(np.sum(currents_ma))
     charge_per_pulse_uc = pulse_charge_uc(currents_ma, pulse_width_us)
     total_charge_uc = float(np.sum(charge_per_pulse_uc))
     duration_seconds = float(duration_ms) / 1000.0
     charge_rate_uc_per_s = total_charge_uc / duration_seconds
-    device_cost = normalized_device_cost(total_charge_uc, duration_ms=duration_ms, device_config=device_config)
+    device_cost = normalized_device_cost(total_current_pulse_ma, duration_ms=duration_ms, device_config=device_config)
 
     return {
         "raw_recruitment_dose": raw_recruitment_dose,

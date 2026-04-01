@@ -14,10 +14,10 @@ def test_raw_dose_is_sum_of_pulse_alpha() -> None:
     assert np.isclose(raw_dose_from_pulse_alpha(pulse_alpha), 1.2)
 
 
-def test_device_cost_matches_full_hardware_reference() -> None:
+def test_device_cost_matches_full_current_rate_reference() -> None:
     dose_config = DoseConfig(max_frequency_hz=1200.0)
     device_config = DeviceConfig(
-        max_total_current_ma=100.0,
+        max_total_current_ma=50.0,
         min_pulse_width_us=60.0,
         max_pulse_width_us=1000.0,
         pulse_width_step_us=10.0,
@@ -33,10 +33,10 @@ def test_device_cost_matches_full_hardware_reference() -> None:
     metrics = compute_pattern_dose(pattern, dose_config, device_config)
     assert np.isclose(metrics["raw_recruitment_dose"], 1200.0)
     assert np.isclose(metrics["device_cost"], 1.0)
-    assert np.isclose(metrics["mean_total_current_ma"], 100.0)
+    assert np.isclose(metrics["mean_total_current_ma"], 50.0)
 
 
-def test_device_cost_scales_with_shorter_pulse_width() -> None:
+def test_device_cost_does_not_change_with_fixed_pulse_width_choice() -> None:
     dose_config = DoseConfig(max_frequency_hz=1200.0)
     device_config = DeviceConfig(fixed_pulse_width_us=500.0)
     pattern = generate_tonic_pattern(
@@ -46,8 +46,8 @@ def test_device_cost_scales_with_shorter_pulse_width() -> None:
         device_config=device_config,
     )
     metrics = compute_pattern_dose(pattern, dose_config, device_config)
-    assert np.isclose(metrics["device_cost"], 0.5)
-    assert np.isclose(metrics["mean_charge_per_pulse_uc"], 50.0)
+    assert np.isclose(metrics["device_cost"], 1.0)
+    assert np.isclose(metrics["mean_charge_per_pulse_uc"], 25.0)
 
 
 def test_combined_objective_penalizes_budget_violation() -> None:

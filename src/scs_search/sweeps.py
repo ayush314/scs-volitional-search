@@ -6,7 +6,7 @@ from typing import Iterable
 
 import numpy as np
 
-from .analysis import build_upper_hull_frontier, summary_to_record
+from .analysis import build_best_under_limit_frontier, summary_to_record
 from .config import PatternParameters, SimulationConfig
 from .patterns import theta_from_duty_cycle, theta_from_tonic
 from .simulator_adapter import evaluate_pattern
@@ -137,7 +137,7 @@ def run_sweep_suite(
         reference_emg_by_seed=reference_emg_by_seed,
     )
     all_records = tonic_records + duty_records + full_records
-    frontier = build_upper_hull_frontier(all_records)
+    frontier = build_best_under_limit_frontier(all_records)
     return {
         "tonic": tonic_records,
         "duty_cycle": duty_records,

@@ -35,8 +35,8 @@ def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | Non
     return record
 
 
-def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Return the upper hull in device-budget/correlation space."""
+def build_best_under_limit_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Return the best observed correlation under each device-usage limit."""
 
     best_by_cost: dict[float, dict[str, Any]] = {}
     for record in records:
@@ -47,24 +47,27 @@ def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict
             best_by_cost[dose] = dict(record)
 
     ordered = [best_by_cost[dose] for dose in sorted(best_by_cost)]
-    if len(ordered) <= 2:
-        return ordered
-
-    def cross(o: Mapping[str, Any], a: Mapping[str, Any], b: Mapping[str, Any]) -> float:
-        return (
-            (float(a["device_cost"]) - float(o["device_cost"]))
-            * (float(b["mean_corr"]) - float(o["mean_corr"]))
-            - (float(a["mean_corr"]) - float(o["mean_corr"]))
-            * (float(b["device_cost"]) - float(o["device_cost"]))
-        )
-
-    hull: list[dict[str, Any]] = []
+    frontier: list[dict[str, Any]] = []
+    best_so_far = float("-inf")
+    best_record: dict[str, Any] | None = None
     for record in ordered:
-        point = dict(record)
-        while len(hull) >= 2 and cross(hull[-2], hull[-1], point) >= 0.0:
-            hull.pop()
-        hull.append(point)
-    return hull
+        score = float(record["mean_corr"])
+        if best_record is None or score > best_so_far:
+            best_so_far = score
+            best_record = dict(record)
+        point = dict(best_record)
+        point["device_cost"] = float(record["device_cost"])
+        point["device_cost_limit"] = float(record["device_cost"])
+        point["source_device_cost"] = float(best_record["device_cost"])
+        point["mean_corr"] = float(best_so_far)
+        frontier.append(point)
+    return frontier
+
+
+def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Compatibility wrapper for older call sites."""
+
+    return build_best_under_limit_frontier(records)
 
 
 def best_so_far_trace(

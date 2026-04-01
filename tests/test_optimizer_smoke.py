@@ -20,7 +20,7 @@ _RUN_BOHB_SPEC.loader.exec_module(run_bohb)
 
 def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> EvaluationSummary:
     pulse_width_us = 210.0
-    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) * pulse_width_us / (1200.0 * 1000.0))
+    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) / 1200.0)
     corr = 1.0 - device_cost
     return EvaluationSummary(
         theta=theta,
@@ -35,7 +35,7 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_norm_dose=0.0,
         mean_device_cost=device_cost,
         std_device_cost=0.0,
-        mean_total_current_ma=100.0 * float(theta.alpha0),
+        mean_total_current_ma=50.0 * float(theta.alpha0),
         std_total_current_ma=0.0,
         mean_charge_per_pulse_uc=float(theta.alpha0) * pulse_width_us / 10.0,
         std_charge_per_pulse_uc=0.0,
