@@ -10,6 +10,7 @@ import numpy as np
 from scs_search.config import PatientConditionSpec, SimulationConfig, dataclass_config_bundle
 from scs_search.metrics import compute_emg_similarity, mean_and_std_over_seeds
 from scs_search.patterns import generate_tonic_pattern
+from scs_search.plotting import plot_emg_examples
 from scs_search.simulator_adapter import run_condition
 from scs_search.utils import ensure_dir, write_csv, write_json, write_jsonl
 
@@ -53,6 +54,7 @@ def main() -> None:
         for seed in seeds
     ]
     baseline_mean, baseline_std = mean_and_std_over_seeds(baseline_scores)
+    example_seed = int(config.seed_config.train_seeds[0])
 
     per_seed_rows = []
     for result_group in (healthy_results, lesion_results):
@@ -94,6 +96,17 @@ def main() -> None:
     write_json(output_dir / "emg_index.json", {"arrays": list(emg_arrays.keys())})
 
     np.savez(output_dir / "emg_arrays.npz", **emg_arrays)
+    plot_emg_examples(
+        healthy_by_seed[example_seed],
+        lesion_by_seed[example_seed],
+        output_dir / "reference_emg.png",
+        (
+            f"Healthy vs lesion no stim (seed {example_seed})"
+            f" | baseline corr={baseline_mean:.3f}"
+        ),
+        reference_label="Healthy pre-lesion",
+        candidate_label="Lesion no stim",
+    )
 
 
 if __name__ == "__main__":

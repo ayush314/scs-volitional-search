@@ -24,7 +24,7 @@ def main() -> None:
     args = parse_args()
     config = SimulationConfig(backend="neuron")
     output_dir = ensure_dir(args.output_dir)
-    seeds = config.seed_config.train_seeds
+    seeds = config.seed_config.train_seeds[:1]
     reference_dir = Path(output_dir).parent / "reference"
     reference_cache = resolve_reference_emg_cache(seeds, config, reference_dir=reference_dir)
     baseline = reference_baseline_stats(reference_dir, config.metric_config)
@@ -40,6 +40,7 @@ def main() -> None:
             "preset": "study",
             "cost_metric": "device_cost",
             "num_records": len(sweep_results["all"]),
+            "evaluation_seed_policy": "single_seed_for_coverage",
             "train_seeds": list(seeds),
             "seed_trials": len(sweep_results["all"]) * len(seeds),
             "reference_dir": str(reference_dir),

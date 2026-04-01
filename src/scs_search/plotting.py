@@ -21,19 +21,27 @@ def _prepare_output(path: str | Path) -> Path:
 def _cost_value(record: Mapping[str, float]) -> float:
     """Return the public hardware-budget cost from a flat record."""
 
-    return float(record.get("device_cost", record.get("norm_dose", 0.0)))
+    return float(record["device_cost"])
 
 
-def plot_emg_examples(reference_emg: np.ndarray, candidate_emg: np.ndarray, output_path: str | Path, title: str) -> None:
-    """Plot a pre-lesion vs lesion+SCS EMG comparison."""
+def plot_emg_examples(
+    reference_emg: np.ndarray,
+    candidate_emg: np.ndarray,
+    output_path: str | Path,
+    title: str,
+    *,
+    reference_label: str = "Pre-lesion",
+    candidate_label: str = "Lesion + SCS",
+) -> None:
+    """Plot two EMG traces with caller-provided labels."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(10, 4))
     duration_ms = max(len(reference_emg), len(candidate_emg))
     reference_time = np.arange(len(reference_emg), dtype=float)
     candidate_time = np.arange(len(candidate_emg), dtype=float)
-    ax.plot(reference_time, reference_emg, label="Pre-lesion", linewidth=1.5)
-    ax.plot(candidate_time, candidate_emg, label="Lesion + SCS", linewidth=1.2)
+    ax.plot(reference_time, reference_emg, label=reference_label, linewidth=1.5)
+    ax.plot(candidate_time, candidate_emg, label=candidate_label, linewidth=1.2)
     ax.set_title(title)
     ax.set_xlabel(f"Time (ms, 0-{max(duration_ms - 1, 0)})")
     ax.set_ylabel("EMG")
@@ -160,7 +168,7 @@ def plot_best_so_far(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot best-so-far restoration versus equivalent full evaluations."""
+    """Plot best-so-far restoration versus seed-level trials."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(7, 4))

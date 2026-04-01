@@ -77,11 +77,7 @@ def mean_and_std_over_seeds(metric_values: Iterable[float]) -> tuple[float, floa
 def best_feasible_under_budget(records: Iterable[Mapping[str, Any]], budget_norm: float, score_key: str = "mean_corr") -> Mapping[str, Any] | None:
     """Return the best feasible record from a sweep or optimizer history."""
 
-    feasible = [
-        record
-        for record in records
-        if float(record.get("device_cost", record.get("norm_dose", np.inf))) <= float(budget_norm)
-    ]
+    feasible = [record for record in records if float(record["device_cost"]) <= float(budget_norm)]
     if not feasible:
         return None
     return max(feasible, key=lambda record: float(record.get(score_key, -np.inf)))

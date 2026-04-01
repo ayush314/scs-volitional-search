@@ -17,11 +17,11 @@ def sweep_grid_values() -> dict[str, np.ndarray]:
     """Return the default sweep preset used for the main experiments."""
 
     return {
-        "tonic_freqs": np.linspace(10.0, 1200.0, num=8),
-        "tonic_alpha": np.linspace(0.1, 0.9, num=6),
-        "duty_freqs": np.linspace(10.0, 1200.0, num=8),
-        "duty_cycle": np.linspace(0.1, 0.9, num=6),
-        "full_theta_samples": np.asarray([104]),
+        "tonic_freqs": np.linspace(10.0, 1200.0, num=4),
+        "tonic_alpha": np.linspace(0.1, 0.9, num=5),
+        "duty_freqs": np.linspace(10.0, 1200.0, num=4),
+        "duty_cycle": np.linspace(0.1, 0.9, num=5),
+        "full_theta_samples": np.asarray([60]),
     }
 
 

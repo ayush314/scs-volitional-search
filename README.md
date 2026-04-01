@@ -1,64 +1,8 @@
 # scs-volitional-search
 
-Research codebase for the CMU 18-879 mechanistic SCS project on volitional motor control.
+More than a million people in the United States live with paralysis due to spinal cord injury, and many never recover motor function to a satisfactory degree. Epidural spinal cord stimulation (SCS) is promising because injury can disrupt descending motor commands while leaving much of the spinal motor circuitry itself intact, creating the possibility that targeted stimulation could amplify residual commands and help re-engage natural spinal pathways.
 
-## Conventions
-
-- `alpha(t)` is normalized recruitment fraction in `[0, 1]` instead of current in mA.
-- The restoration score is Pearson correlation between pre-lesion EMG envelope and lesion+SCS EMG envelope under the same supraspinal drive.
-- This correlation uses full-wave rectified EMG with a 25 ms moving-average envelope.
-- The lesion-without-stimulation correlation against pre-lesion is the baseline to beat and is saved in `results/reference/summary.json`.
-- The default simulation duration is `1000 ms` for the sweep and optimizer runs.
-- The public cost axis is a normalized device-budget approximation:
-  `I_k = 100 * alpha_k mA`, `q_k = I_k * tau`, and
-  `device_cost = sum_k q_k / (T * 100 mA * 1000 us * 1200 Hz)`.
-- This hardware-aware cost is a reporting and constraint layer only; the simulator itself still uses recruitment fraction internally.
-- These hardware limits are taken from the Medtronic Intellis 97715 implant manual:
-  program intensity `0-100 mA`, pulse width `60-1000 us`, master rate `10-1200 Hz`
-  ([manual mirror](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6)).
-- Pulse width is fixed at `210 us` based on human epidural SCS motor studies
-  ([review](https://pmc.ncbi.nlm.nih.gov/articles/PMC10208259/)).
-
-## Parameterization
-
-The main stimulation family is:
-
-```text
-theta = (f, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)
-```
-
-with:
-
-```text
-alpha(t) = clip(
-  alpha0
-  + alpha1 * sin(2*pi*t/T + phi1)
-  + alpha2 * sin(4*pi*t/T + phi2),
-  0,
-  1
-)
-T = T_on + T_off
-```
-
-- Pulses are placed at frequency `f` only during on-windows.
-- `alpha(t)` is evaluated at pulse times and mapped to recruited afferent fraction.
-- Pulse width is fixed at `210 us` for all evaluated patterns.
-- Tonic stimulation is the restricted case `T_off=0`, `alpha1=0`, `alpha2=0`.
-- Duty-cycled constant-amplitude stimulation is the restricted case `T_off>=0`, `alpha1=0`, `alpha2=0`.
-
-## Sweep
-
-`python scripts/run_grid_sweep.py --output-dir results/grid_sweep` evaluates:
-
-- tonic grid: `8 x 6 = 48` patterns over `(f, alpha0)`
-- duty-cycle grid: `8 x 6 = 48` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`
-- full-theta Latin hypercube: `104` patterns over the full 8D `theta` space
-
-Total:
-
-- `200` candidate patterns
-- `3` train seeds per pattern
-- `600` seed-level trials
+This project studies that idea in a mechanistic NEURON simulation of a fine-motor task. We simulate a patient performing the task before lesion to get a healthy EMG target, then simulate the same task after lesion with SCS and search for stimulation patterns that make the lesioned EMG match the healthy one. The motivation for searching over patterned stimulation, rather than only standard tonic stimulation, is that prior work suggests the temporal structure of stimulation matters and may interact with the nonlinear dynamics of spinal circuits.
 
 ## Setup
 
@@ -71,65 +15,82 @@ uv pip install -e ".[optim,dev]"
 python -c "from neuron import h; print('NEURON OK')"
 ```
 
-## Main Workflow
+## Experiment
+
+We search over an 8-parameter stimulation pattern
+`theta = (f, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)`.
+Here, `f` sets pulse frequency, `T_on` and `T_off` set the repeating on/off structure, and the remaining parameters define a clipped two-harmonic envelope
+`alpha(t) = clip(alpha0 + alpha1 sin(2πt/T + phi1) + alpha2 sin(4πt/T + phi2), 0, 1)`,
+with `T = T_on + T_off`. Inside the simulator, `alpha(t)` is the recruited-fiber fraction. In the hardware-cost layer, the same `alpha(t)` is also treated as a simple fraction of maximum program current.
+
+We chose this pattern family as a compromise between flexibility and tractability. It can represent standard tonic stimulation, turn stimulation on and off in repeating blocks through `T_on` and `T_off`, and add modest within-cycle modulation through the two harmonics. That gives the study enough temporal variety to test non-tonic patterns without making the search space too large.
+
+## Scoring
+
+The y-axis is restoration correlation. For each seed, the healthy pre-lesion EMG trace is compared with the lesion + SCS EMG trace from the same fine-motor task. Both traces are rectified and smoothed with a `25 ms` moving-average window, then scored by Pearson correlation. Lesion without stimulation is also generated as a reference condition, but the main study is broader than just the unstimulated lesion comparison: the grid sweep maps the pattern space, and the optimizers are compared by how efficiently they find high-correlation patterns.
+
+The x-axis is a hardware-aware cost metric,
+`device_cost = sum_k q_k / (T_run * 100 mA * 1000 us * 1200 Hz)`,
+with `q_k = (100 mA * alpha_k) * 210 us`.
+In words, `device_cost` is delivered charge divided by the maximum charge the device could have delivered over the same run under Medtronic-style limits of `0-100 mA`, `60-1000 us`, and `10-1200 Hz`:
+[`Medtronic Intellis 97715 manual mirror`](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6)
+We fix pulse width at `210 us` for the current study; that choice is within the motor-control epidural SCS range summarized here:
+[`motor-control epidural SCS review`](https://pmc.ncbi.nlm.nih.gov/articles/PMC10208259/)
+
+## Runs
 
 ```bash
 python scripts/run_prelesion_reference.py --output-dir results/reference
 python scripts/run_grid_sweep.py --output-dir results/grid_sweep
-python scripts/run_cmaes.py --seed-trial-budget 600 --output-dir results/cmaes
-python scripts/run_turbo.py --seed-trial-budget 600 --output-dir results/turbo
-python scripts/run_bohb.py --seed-trial-budget 600 --output-dir results/bohb
+python scripts/run_cmaes.py --seed-trial-budget 100 --output-dir results/cmaes
+python scripts/run_turbo.py --seed-trial-budget 100 --output-dir results/turbo
+python scripts/run_bohb.py --seed-trial-budget 100 --output-dir results/bohb
 python scripts/summarize_results.py --results-root results
 ```
 
-Use this order:
-
-1. Generate pre-lesion and lesion references.
-2. Run the full sweep and inspect the device-budget/correlation upper hull over evaluated patterns.
-3. Run CMA-ES, TuRBO, and BOHB.
-4. Summarize combined plots directly under `results/`.
-
-`run_prelesion_reference.py` saves the healthy reference traces for both the train seeds and report seeds. The sweep and optimizer scripts reuse `results/reference/emg_arrays.npz` when it exists and only build missing healthy traces.
+Run the scripts in that order:
+- `run_prelesion_reference.py` builds the healthy target and lesion-no-stim reference condition.
+- `run_grid_sweep.py` samples the stimulation space broadly and produces the sweep frontier.
+- `run_cmaes.py`, `run_turbo.py`, and `run_bohb.py` apply the three adaptive search methods under matched seed-level compute.
+- `summarize_results.py` combines finished runs into shared comparison plots.
 
 ## Defaults
 
-- lesion severity: `perc_supra_intact = 0.2`
-- train/eval seeds per candidate: `3`
-- reporting seeds: `3`
-- simulation duration: `1000 ms`
-- fixed pulse width for all runs: `210 us`
-- default sweep size: `200` candidate patterns
-- default sweep compute: `200 x 3 = 600` seed-level trials
-- optimizer fairness budget: `600` seed-level trials by default, configurable with `--seed-trial-budget`
-- restoration metric: mean seed-averaged EMG-envelope correlation
-- device budget normalization reference: `100 mA`, `1000 us`, `1200 Hz` over the full run duration
-- optimizer comparison x-axis: seed-level trials used during search
+- Simulation duration: `1000 ms`
+- Lesion severity: `perc_supra_intact = 0.2`
+- Sweep: `100` candidates total = `20` tonic + `20` duty-cycle + `60` full-theta LHS
+- Sweep evaluation policy: `1` fixed train seed per candidate for coverage
+- Optimizer training seeds: up to `3` per candidate
+- Optimizer budget: `100` seed-level trials by default
+- Final reporting seeds: `3`
 
 ## Outputs
 
-Each run writes:
-
-- `config.json`
-- `metrics.jsonl`
-- `metrics.csv`
-- summary JSON
-- `frontier.json` for sweep and optimizer device-budget/correlation hulls
-- plots where relevant, including local device-budget/correlation hulls and optimizer best-so-far traces
-- device-budget/correlation and optimizer-trace plots include a dashed lesion-without-stimulation baseline when `results/reference` exists
-
-The optimizer scripts also write:
-
-- `trace.json` with best-so-far correlation versus seed-level trials
-- `best_so_far.png`
-- `device_budget_vs_corr.png`
-- `device_budget_vs_corr_with_grid.png` when `results/grid_sweep` exists
-
-`scripts/summarize_results.py` writes combined plots directly to `results/`:
-
-- `reference_emg.png`
-- `frontier.png`
-- `optimizer_comparison.png`
-- `seed_sensitivity.png`
+- `results/reference/`
+  - `config.json`, `metrics.jsonl`, `metrics.csv`: reference-run settings and per-condition rows
+  - `summary.json`: lesion-no-stim correlation summary
+  - `emg_arrays.npz`, `emg_index.json`: healthy and lesion EMG traces by seed
+  - `reference_emg.png`: healthy pre-lesion versus lesion no stim
+- `results/grid_sweep/`
+  - `config.json`: sweep settings
+  - `metrics.jsonl`, `metrics.csv`: one row per sampled candidate
+  - `summary.json`: candidate count and seed-level trial count
+  - `frontier.json`: sweep hull
+  - `frontier.png`: sampled candidates and sweep frontier
+- `results/cmaes/`, `results/turbo/`, `results/bohb/`
+  - `config.json`: optimizer settings
+  - `history.json`, `metrics.jsonl`, `metrics.csv`: candidate evaluations during search
+  - `trace.json`: best-so-far progress
+  - `summary.json`: final incumbent summary
+  - `frontier.json`: that method's hull
+  - `best_so_far.png`: search progress versus seed-level trials
+  - `device_budget_vs_corr.png`: that method's visited device-cost/correlation region
+  - `device_budget_vs_corr_with_grid.png`: overlay against the grid sweep when sweep outputs are present
+- `results/`
+  - `reference_emg.png`: healthy pre-lesion versus lesion + best stimulation found so far
+  - `frontier.png`: top-level copy of the sweep frontier
+  - `optimizer_comparison.png`: all optimizer best-so-far traces on one plot
+  - `seed_sensitivity.png`: final incumbent mean ± std across report seeds for each optimizer
 
 ## Tests
 

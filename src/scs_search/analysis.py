@@ -40,7 +40,7 @@ def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict
 
     best_by_cost: dict[float, dict[str, Any]] = {}
     for record in records:
-        dose = float(record.get("device_cost", record.get("norm_dose", np.inf)))
+        dose = float(record["device_cost"])
         score = float(record["mean_corr"])
         existing = best_by_cost.get(dose)
         if existing is None or score > float(existing["mean_corr"]):
@@ -52,10 +52,10 @@ def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict
 
     def cross(o: Mapping[str, Any], a: Mapping[str, Any], b: Mapping[str, Any]) -> float:
         return (
-            (float(a.get("device_cost", a.get("norm_dose"))) - float(o.get("device_cost", o.get("norm_dose"))))
+            (float(a["device_cost"]) - float(o["device_cost"]))
             * (float(b["mean_corr"]) - float(o["mean_corr"]))
             - (float(a["mean_corr"]) - float(o["mean_corr"]))
-            * (float(b.get("device_cost", b.get("norm_dose"))) - float(o.get("device_cost", o.get("norm_dose"))))
+            * (float(b["device_cost"]) - float(o["device_cost"]))
         )
 
     hull: list[dict[str, Any]] = []
@@ -80,7 +80,7 @@ def best_so_far_trace(
     for index, record in enumerate(records, start=1):
         score = float(record.get(score_key, float("-inf")))
         best_any = max(best_any, score)
-        if budget_norm is None or float(record.get("device_cost", record.get("norm_dose", float("inf")))) <= float(budget_norm):
+        if budget_norm is None or float(record["device_cost"]) <= float(budget_norm):
             best_feasible = max(best_feasible, score)
         trace.append(
             {

@@ -20,8 +20,8 @@ THETA_NAMES: tuple[str, ...] = (
     "phi2",
 )
 DEFAULT_BUDGET_LEVELS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
-DEFAULT_SWEEP_EVALUATIONS: int = 200
-DEFAULT_SWEEP_SEED_TRIALS: int = DEFAULT_SWEEP_EVALUATIONS * 3
+DEFAULT_SWEEP_EVALUATIONS: int = 100
+DEFAULT_SWEEP_SEED_TRIALS: int = 100
 UPSTREAM_REPOS: dict[str, str] = {
     "SCSInSCIMechanisms": "ea349460de2a245ec5d3a929a00006b9ac821825",
     "GeneticAlgorithmSCSMotorControl": "67267ae076baa826812051ce81c8c20fe327808e",
@@ -70,8 +70,6 @@ class PatternParameters:
             if "a2" in values and "alpha2" not in values:
                 values["alpha2"] = values["a2"]
             return cls(**{name: float(values[name]) for name in THETA_NAMES})
-        if len(theta) == len(THETA_NAMES) + 1:
-            theta = [theta[0], *theta[2:]]
         if len(theta) != len(THETA_NAMES):
             raise ValueError(f"Expected {len(THETA_NAMES)} parameters, received {len(theta)}.")
         return cls(**{name: float(value) for name, value in zip(THETA_NAMES, theta)})
@@ -232,8 +230,8 @@ class StimPattern:
     theta: PatternParameters
     time_ms: np.ndarray
     alpha_t: np.ndarray
-    pulse_times_ms: np.ndarray  # pulse width
-    pulse_alpha: np.ndarray  # pulse amplitude
+    pulse_times_ms: np.ndarray
+    pulse_alpha: np.ndarray
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
