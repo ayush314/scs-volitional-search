@@ -48,15 +48,15 @@ T = T_on + T_off
 
 `python scripts/run_grid_sweep.py --output-dir results/grid_sweep` evaluates:
 
-- tonic grid: `12 x 9 = 108` patterns over `(f, alpha0)` at fixed `pulse_width_us = 300`
-- duty-cycle grid: `12 x 9 = 108` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`, `pulse_width_us = 300`
-- full-theta Latin hypercube: `256` patterns over the full 9D `theta` space
+- tonic grid: `8 x 6 = 48` patterns over `(f, alpha0)` at fixed `pulse_width_us = 300`
+- duty-cycle grid: `8 x 6 = 48` patterns over `(f, duty_cycle)` at fixed `alpha=0.5`, `pulse_width_us = 300`
+- full-theta Latin hypercube: `104` patterns over the full 9D `theta` space
 
 Total:
 
-- `472` candidate patterns
+- `200` candidate patterns
 - `3` train seeds per pattern
-- `1416` seed-level trials
+- `600` seed-level trials
 
 ## Setup
 
@@ -74,9 +74,9 @@ python -c "from neuron import h; print('NEURON OK')"
 ```bash
 python scripts/run_prelesion_reference.py --output-dir results/reference
 python scripts/run_grid_sweep.py --output-dir results/grid_sweep
-python scripts/run_cmaes.py --seed-trial-budget 1416 --output-dir results/cmaes
-python scripts/run_turbo.py --seed-trial-budget 1416 --output-dir results/turbo
-python scripts/run_bohb.py --seed-trial-budget 1416 --output-dir results/bohb
+python scripts/run_cmaes.py --seed-trial-budget 600 --output-dir results/cmaes
+python scripts/run_turbo.py --seed-trial-budget 600 --output-dir results/turbo
+python scripts/run_bohb.py --seed-trial-budget 600 --output-dir results/bohb
 python scripts/summarize_results.py --results-root results
 ```
 
@@ -96,9 +96,9 @@ Use this order:
 - reporting seeds: `3`
 - simulation duration: `1000 ms`
 - default pulse width for restricted tonic/duty-cycle sweeps: `300 us`
-- default sweep size: `472` candidate patterns
-- default sweep compute: `472 x 3 = 1416` seed-level trials
-- optimizer fairness budget: `1416` seed-level trials by default, configurable with `--seed-trial-budget`
+- default sweep size: `200` candidate patterns
+- default sweep compute: `200 x 3 = 600` seed-level trials
+- optimizer fairness budget: `600` seed-level trials by default, configurable with `--seed-trial-budget`
 - restoration metric: mean seed-averaged EMG-envelope correlation
 - device budget normalization reference: `100 mA`, `1000 us`, `1200 Hz` over the full run duration
 - optimizer comparison x-axis: seed-level trials used during search
