@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping
 
 import numpy as np
 from scipy.stats import qmc
@@ -118,22 +117,6 @@ def write_jsonl(path: str | Path, rows: Iterable[Any]) -> None:
     with output_path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(to_serializable(row), sort_keys=True) + "\n")
-
-
-def write_csv(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write a simple CSV file from flat dictionaries."""
-
-    output_path = Path(path)
-    ensure_dir(output_path.parent)
-    if not rows:
-        output_path.write_text("", encoding="utf-8")
-        return
-    fieldnames = list(rows[0].keys())
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: to_serializable(value) for key, value in row.items()})
 
 
 def read_json(path: str | Path) -> Any:

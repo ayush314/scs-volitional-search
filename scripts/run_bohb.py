@@ -9,9 +9,11 @@ from pathlib import Path
 
 from scs_search.analysis import best_so_far_trace, build_best_under_limit_frontier, reference_baseline_stats
 from scs_search.config import DEFAULT_SWEEP_SEED_TRIALS, OptimizerConfig, SimulationConfig, dataclass_config_bundle
+from scs_search.optimizers import optimizer_summary_payload
 from scs_search.optimizers.bohb_runner import run_optimizer
-from scs_search.plotting import plot_best_so_far, plot_frontier, plot_frontier_overlay
-from scs_search.utils import ensure_dir, read_json, read_jsonl, write_csv, write_json, write_jsonl
+from scs_search.plotting import lesion_label, plot_best_so_far, plot_frontier, plot_frontier_overlay
+from scs_search.simulator_adapter import write_best_emg_panel
+from scs_search.utils import ensure_dir, read_jsonl, write_json, write_jsonl
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,39 +30,46 @@ def main() -> None:
     output_dir = ensure_dir(args.output_dir)
     result = run_optimizer({"simulation": simulation, "optimizer": optimizer}, str(output_dir))
     history = result.history
-    trace = best_so_far_trace(history, budget_norm=optimizer.budget_norm)
+    trace = best_so_far_trace(history)
     frontier = build_best_under_limit_frontier(history)
     baseline = reference_baseline_stats(Path(output_dir).parent / "reference", simulation.metric_config)
 
-    write_json(output_dir / "config.json", dataclass_config_bundle(simulation, optimizer))
-    write_json(output_dir / "summary.json", result)
-    write_json(output_dir / "history.json", history)
-    write_json(output_dir / "frontier.json", frontier)
-    write_jsonl(output_dir / "metrics.jsonl", history)
-    write_csv(output_dir / "metrics.csv", history)
-    write_json(output_dir / "trace.json", trace)
+    write_json(
+        output_dir / "summary.json",
+        optimizer_summary_payload(result=result, config_bundle=dataclass_config_bundle(simulation, optimizer)),
+    )
+    write_jsonl(output_dir / "history.jsonl", history)
+    write_best_emg_panel(
+        method_key="bohb",
+        theta=result.incumbent_theta,
+        output_dir=output_dir,
+        config=simulation,
+        reference_dir=Path(output_dir).parent / "reference",
+    )
     plot_best_so_far(
-        {"BOHB": trace},
-        output_dir / "best_so_far.png",
+        {lesion_label("bohb"): trace},
+        output_dir / "search_progress.png",
         baseline_corr=None if baseline is None else float(baseline["mean_corr"]),
+        title="BOHB search progress across seed-level trials",
     )
     plot_frontier(
         history,
         frontier,
-        output_dir / "device_budget_vs_corr.png",
+        output_dir / "frontier.png",
         baseline_corr=None if baseline is None else float(baseline["mean_corr"]),
+        title="BOHB frontier",
     )
 
     grid_dir = Path(output_dir).parent / "grid_sweep"
-    grid_frontier_file = grid_dir / "frontier.json"
-    grid_metrics_file = grid_dir / "metrics.jsonl"
-    if grid_frontier_file.exists() and grid_metrics_file.exists():
+    grid_patterns_file = grid_dir / "patterns.jsonl"
+    if grid_patterns_file.exists():
+        grid_records = read_jsonl(grid_patterns_file)
         plot_frontier_overlay(
-            read_jsonl(grid_metrics_file),
-            read_json(grid_frontier_file),
+            grid_records,
+            build_best_under_limit_frontier(grid_records),
             history,
             frontier,
-            output_dir / "device_budget_vs_corr_with_grid.png",
+            output_dir / "frontier_with_grid.png",
             base_name="Grid sweep",
             overlay_name="BOHB",
             baseline_corr=None if baseline is None else float(baseline["mean_corr"]),

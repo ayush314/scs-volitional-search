@@ -25,6 +25,7 @@ from .config import (
 from .dose import combined_objective, compute_pattern_dose
 from .metrics import compute_emg_similarity, mean_and_std_over_seeds
 from .patterns import generate_stim_pattern, generate_tonic_pattern
+from .plotting import display_name, lesion_label, plot_emg_seed_panels
 from .utils import ensure_dir, progress, write_json
 
 
@@ -421,10 +422,6 @@ def evaluate_pattern(
         theta=theta_params,
         pulse_alpha=stim_pattern.pulse_alpha,
     )
-    feasible_by_budget = {
-        str(budget): bool(mean_device_cost <= float(budget) + 1e-12)
-        for budget in config.dose_config.budget_levels
-    }
     return EvaluationSummary(
         theta=theta_params,
         family=stim_pattern.family,
@@ -446,7 +443,6 @@ def evaluate_pattern(
         std_charge_rate_uc_per_s=std_charge_rate_uc_per_s,
         penalized_objective=penalized_score,
         robust_objective=robust_score,
-        feasible_by_budget=feasible_by_budget,
         metadata={
             "budget_norm": budget_norm,
             "backend": config.backend,
@@ -506,7 +502,6 @@ def _persist_reference_emg_cache(reference_dir: str | Path, cache_by_seed: dict[
     for seed, emg_signal in cache_by_seed.items():
         arrays[f"{_HEALTHY_REFERENCE_PREFIX}{int(seed)}"] = np.asarray(emg_signal, dtype=float)
     np.savez(cache_path, **arrays)
-    write_json(reference_path / "emg_index.json", {"arrays": sorted(arrays.keys())})
 
 
 def resolve_reference_emg_cache(
@@ -525,3 +520,73 @@ def resolve_reference_emg_cache(
         if reference_dir is not None:
             _persist_reference_emg_cache(reference_dir, built_cache)
     return {seed: np.asarray(reference_cache[seed], dtype=float) for seed in seeds_tuple}
+
+
+def write_best_emg_panel(
+    *,
+    method_key: str,
+    theta: PatternParameters,
+    output_dir: str | Path,
+    config: SimulationConfig,
+    reference_dir: str | Path,
+) -> None:
+    """Evaluate one best candidate on train seeds and write its EMG comparison panel."""
+
+    output_path = ensure_dir(output_dir)
+    train_seeds = tuple(int(seed) for seed in config.seed_config.train_seeds)
+    reference_cache = resolve_reference_emg_cache(train_seeds, config, reference_dir=reference_dir)
+    stim_pattern = generate_stim_pattern(
+        theta,
+        t_end_ms=config.simulation_duration_ms,
+        dt_ms=config.dt_ms,
+        device_config=config.device_config,
+    )
+    lesion_condition = PatientConditionSpec(
+        label=f"lesion_{method_key}",
+        perc_supra_intact=config.lesion_perc_supra_intact,
+    )
+    lesion_results = run_condition(lesion_condition, stim_pattern, train_seeds, config)
+    lesion_by_seed = {int(result.trial_seed): result.emg_signal for result in lesion_results}
+    train_corrs = [
+        compute_emg_similarity(
+            reference_emg=reference_cache[int(seed)],
+            candidate_emg=lesion_by_seed[int(seed)],
+            envelope_window_ms=config.metric_config.envelope_window_ms,
+            max_lag_ms=config.metric_config.max_lag_ms,
+            use_envelope=config.metric_config.use_envelope,
+        )
+        for seed in train_seeds
+    ]
+    mean_corr, _ = mean_and_std_over_seeds(train_corrs)
+    comparison_label = lesion_label(method_key)
+    comparison_label = comparison_label[0].lower() + comparison_label[1:]
+    plot_emg_seed_panels(
+        {int(seed): reference_cache[int(seed)] for seed in train_seeds},
+        lesion_by_seed,
+        output_path / "best_emg.png",
+        f"Healthy pre-lesion vs {comparison_label} | corr={mean_corr:.3f}",
+        reference_label="Healthy pre-lesion",
+        candidate_label=lesion_label(method_key),
+    )
+
+
+def evaluate_best_candidate_report_summary(
+    *,
+    theta: PatternParameters,
+    output_dir: str | Path,
+    config: SimulationConfig,
+    reference_dir: str | Path,
+) -> EvaluationSummary:
+    """Reevaluate one candidate on report seeds and write the final report summary."""
+
+    output_path = ensure_dir(output_dir)
+    report_seeds = tuple(int(seed) for seed in config.seed_config.report_seeds)
+    reference_cache = resolve_reference_emg_cache(report_seeds, config, reference_dir=reference_dir)
+    summary = evaluate_pattern(
+        theta=theta,
+        seeds=report_seeds,
+        config=config,
+        reference_emg_by_seed=reference_cache,
+    )
+    write_json(output_path / "final_report_summary.json", summary)
+    return summary

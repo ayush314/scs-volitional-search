@@ -34,7 +34,6 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_charge_rate_uc_per_s=0.0,
         penalized_objective=corr,
         robust_objective=corr,
-        feasible_by_budget={"1.0": True},
         metadata={"pulse_width_us": pulse_width_us},
     )
 
@@ -75,3 +74,11 @@ def test_sweep_grid_values_allocates_from_seed_trial_budget() -> None:
     assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) == 20
     assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) == 20
     assert int(preset["full_theta_samples"][0]) == 60
+
+
+def test_sweep_grid_values_stays_balanced_for_three_seed_budget() -> None:
+    preset = sweep_grid_values(seed_trial_budget=700, seed_count=3)
+
+    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) == 48
+    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) == 48
+    assert int(preset["full_theta_samples"][0]) == 137

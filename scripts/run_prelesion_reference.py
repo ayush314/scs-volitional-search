@@ -10,9 +10,9 @@ import numpy as np
 from scs_search.config import PatientConditionSpec, SimulationConfig, dataclass_config_bundle
 from scs_search.metrics import compute_emg_similarity, mean_and_std_over_seeds
 from scs_search.patterns import generate_tonic_pattern
-from scs_search.plotting import plot_emg_examples
+from scs_search.plotting import plot_emg_seed_panels
 from scs_search.simulator_adapter import run_condition
-from scs_search.utils import ensure_dir, write_csv, write_json, write_jsonl
+from scs_search.utils import ensure_dir, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,26 +54,23 @@ def main() -> None:
         for seed in seeds
     ]
     baseline_mean, baseline_std = mean_and_std_over_seeds(baseline_scores)
-    example_seed = int(config.seed_config.train_seeds[0])
+    train_seeds = tuple(int(seed) for seed in config.seed_config.train_seeds)
+    train_baseline_scores = [
+        compute_emg_similarity(
+            reference_emg=healthy_by_seed[seed],
+            candidate_emg=lesion_by_seed[seed],
+            envelope_window_ms=config.metric_config.envelope_window_ms,
+            max_lag_ms=config.metric_config.max_lag_ms,
+            use_envelope=config.metric_config.use_envelope,
+        )
+        for seed in train_seeds
+    ]
+    train_baseline_mean, _ = mean_and_std_over_seeds(train_baseline_scores)
 
-    per_seed_rows = []
-    for result_group in (healthy_results, lesion_results):
-        for result in result_group:
-            row = {
-                "condition": result.condition_label,
-                "seed": result.trial_seed,
-                "backend": result.backend,
-                "emg_mean": float(result.emg_signal.mean()),
-                "emg_std": float(result.emg_signal.std()),
-            }
-            per_seed_rows.append(row)
-
-    write_json(output_dir / "config.json", dataclass_config_bundle(config))
-    write_jsonl(output_dir / "metrics.jsonl", per_seed_rows)
-    write_csv(output_dir / "metrics.csv", per_seed_rows)
     write_json(
         output_dir / "summary.json",
         {
+            "config": dataclass_config_bundle(config),
             "seeds": list(seeds),
             "train_seeds": list(config.seed_config.train_seeds),
             "report_seeds": list(config.seed_config.report_seeds),
@@ -93,17 +90,12 @@ def main() -> None:
         f"{result.condition_label}_seed_{result.trial_seed}": result.emg_signal
         for result in healthy_results + lesion_results
     }
-    write_json(output_dir / "emg_index.json", {"arrays": list(emg_arrays.keys())})
-
     np.savez(output_dir / "emg_arrays.npz", **emg_arrays)
-    plot_emg_examples(
-        healthy_by_seed[example_seed],
-        lesion_by_seed[example_seed],
+    plot_emg_seed_panels(
+        {seed: healthy_by_seed[seed] for seed in train_seeds},
+        {seed: lesion_by_seed[seed] for seed in train_seeds},
         output_dir / "reference_emg.png",
-        (
-            f"Healthy vs lesion no stim (seed {example_seed})"
-            f" | baseline corr={baseline_mean:.3f}"
-        ),
+        f"Healthy pre-lesion vs lesion no stim | corr={train_baseline_mean:.3f}",
         reference_label="Healthy pre-lesion",
         candidate_label="Lesion no stim",
     )

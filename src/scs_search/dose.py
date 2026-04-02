@@ -123,12 +123,6 @@ def combined_objective(
     return robust_score, penalized
 
 
-def is_feasible(device_cost: float, budget_norm: float | None) -> bool:
-    """Return whether a candidate satisfies the requested device-budget constraint."""
-
-    return budget_norm is None or float(device_cost) <= float(budget_norm) + 1e-12
-
-
 def device_metric_summary(pattern: StimPattern, dose_config: DoseConfig, device_config: DeviceConfig) -> dict[str, Any]:
     """Convenience wrapper retained for scripts and debugging helpers."""
 

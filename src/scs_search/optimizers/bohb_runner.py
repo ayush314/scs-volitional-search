@@ -48,7 +48,6 @@ def run_optimizer(run_config: Mapping[str, Any], output_dir: str) -> Any:
     report_seeds = simulation_config.seed_config.report_seeds
     reference_dir = Path(output_dir).resolve().parent / "reference"
     train_reference = resolve_reference_emg_cache(train_seeds, simulation_config, reference_dir=reference_dir)
-    report_reference = resolve_reference_emg_cache(report_seeds, simulation_config, reference_dir=reference_dir)
     configspace = _build_configspace(simulation_config.theta_bounds, seed=simulation_config.structural_seed)
 
     rng = np.random.RandomState(simulation_config.structural_seed)
@@ -133,19 +132,11 @@ def run_optimizer(run_config: Mapping[str, Any], output_dir: str) -> Any:
     if best_theta is None or best_summary is None:
         raise RuntimeError("BOHB did not evaluate any candidate.")
 
-    incumbent_summary = evaluate_pattern(
-        theta=best_theta,
-        seeds=report_seeds,
-        config=simulation_config,
-        budget_norm=optimizer_config.budget_norm,
-        reference_emg_by_seed=report_reference,
-        robust_objective=optimizer_config.robust_objective,
-    )
     return final_run_result(
         algorithm="bohb",
         output_dir=output_dir,
         incumbent_theta=best_theta,
-        incumbent_summary=incumbent_summary,
+        incumbent_summary=best_summary,
         history=history,
         metadata={
             "seed_trial_budget": target_seed_trials,

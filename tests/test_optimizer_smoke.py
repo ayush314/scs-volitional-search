@@ -43,7 +43,6 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_charge_rate_uc_per_s=0.0,
         penalized_objective=corr,
         robust_objective=corr,
-        feasible_by_budget={"1.0": True},
         metadata={"pulse_width_us": pulse_width_us},
     )
 
@@ -76,13 +75,21 @@ def test_run_bohb_writes_device_cost_outputs(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(run_bohb, "parse_args", lambda: SimpleNamespace(output_dir=str(output_dir), seed_trial_budget=3))
     monkeypatch.setattr(run_bohb, "run_optimizer", fake_run_optimizer)
     monkeypatch.setattr(run_bohb, "reference_baseline_stats", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        run_bohb,
+        "write_best_emg_panel",
+        lambda **kwargs: (Path(kwargs["output_dir"]) / "best_emg.png").write_bytes(b"fake"),
+    )
 
     run_bohb.main()
 
-    with (output_dir / "metrics.jsonl").open("r", encoding="utf-8") as handle:
+    with (output_dir / "history.jsonl").open("r", encoding="utf-8") as handle:
         rows = [json.loads(line) for line in handle]
+    summary_payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
 
     assert rows
     assert "device_cost" in rows[0]
     assert "theta_T_on" in rows[0]
-    assert (output_dir / "device_budget_vs_corr.png").exists()
+    assert "history" not in summary_payload
+    assert "best_pattern" in summary_payload
+    assert (output_dir / "frontier.png").exists()

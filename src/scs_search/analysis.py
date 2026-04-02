@@ -70,42 +70,38 @@ def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict
     return build_best_under_limit_frontier(records)
 
 
+def best_record(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    score_key: str = "mean_corr",
+) -> dict[str, Any]:
+    """Return the highest-scoring flat record from a sequence."""
+
+    records_list = [dict(record) for record in records]
+    if not records_list:
+        raise ValueError("Cannot choose a best record from an empty sequence.")
+    return max(records_list, key=lambda record: float(record[score_key]))
+
+
 def best_so_far_trace(
     records: Iterable[Mapping[str, Any]],
     score_key: str = "mean_corr",
-    budget_norm: float | None = None,
 ) -> list[dict[str, Any]]:
     """Compute best-so-far traces over an ordered record sequence."""
 
     trace: list[dict[str, Any]] = []
     best_any = float("-inf")
-    best_feasible = float("-inf")
     for index, record in enumerate(records, start=1):
         score = float(record.get(score_key, float("-inf")))
         best_any = max(best_any, score)
-        if budget_norm is None or float(record["device_cost"]) <= float(budget_norm):
-            best_feasible = max(best_feasible, score)
         trace.append(
             {
                 "evaluation_index": index,
                 "seed_trials_used": float(record.get("seed_trials_used", index)),
                 "best_so_far": best_any,
-                "best_feasible_so_far": best_feasible if best_feasible > float("-inf") else None,
             }
         )
     return trace
-
-
-def load_run_bundle(run_dir: str | Path) -> dict[str, Any]:
-    """Load the common summary files from a run directory."""
-
-    path = Path(run_dir)
-    bundle: dict[str, Any] = {}
-    for filename in ("config.json", "summary.json", "frontier.json", "history.json", "metrics.json"):
-        file_path = path / filename
-        if file_path.exists():
-            bundle[filename] = read_json(file_path)
-    return bundle
 
 
 def reference_baseline_stats(reference_dir: str | Path, metric_config: MetricConfig) -> dict[str, Any] | None:

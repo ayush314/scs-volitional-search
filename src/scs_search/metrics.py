@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from typing import Iterable
 
 import numpy as np
 
@@ -73,11 +73,3 @@ def mean_and_std_over_seeds(metric_values: Iterable[float]) -> tuple[float, floa
         return 0.0, 0.0
     return float(np.mean(values)), float(np.std(values, ddof=0))
 
-
-def best_feasible_under_budget(records: Iterable[Mapping[str, Any]], budget_norm: float, score_key: str = "mean_corr") -> Mapping[str, Any] | None:
-    """Return the best feasible record from a sweep or optimizer history."""
-
-    feasible = [record for record in records if float(record["device_cost"]) <= float(budget_norm)]
-    if not feasible:
-        return None
-    return max(feasible, key=lambda record: float(record.get(score_key, -np.inf)))

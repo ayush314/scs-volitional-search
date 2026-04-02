@@ -28,25 +28,42 @@ def _split_counts(total: int, proportions: tuple[float, ...]) -> list[int]:
 
 
 def _grid_shape_for_budget(target: int, preferred_rows: int, preferred_cols: int) -> tuple[int, int]:
-    """Choose a rectangular grid shape under a target count."""
+    """Choose a balanced rectangular grid shape near a target count."""
 
     if target <= 1:
         return (1, max(1, target))
 
     preferred_ratio = preferred_rows / preferred_cols
-    best_rows = 1
-    best_cols = target
-    best_points = 0
+    approx_rows = max(1, int(round(np.sqrt(target * preferred_ratio))))
+    approx_cols = max(1, int(round(np.sqrt(target / preferred_ratio))))
+    row_candidates = range(max(1, approx_rows - 6), approx_rows + 7)
+    col_candidates = range(max(1, approx_cols - 6), approx_cols + 7)
+
+    best_rows = approx_rows
+    best_cols = approx_cols
+    best_objective = float("inf")
+    best_count_error = float("inf")
     best_ratio_error = float("inf")
-    for rows in range(1, target + 1):
-        cols = max(1, target // rows)
-        points = rows * cols
-        ratio_error = abs((rows / cols) - preferred_ratio)
-        if points > best_points or (points == best_points and ratio_error < best_ratio_error):
-            best_rows = rows
-            best_cols = cols
-            best_points = points
-            best_ratio_error = ratio_error
+    for rows in row_candidates:
+        for cols in col_candidates:
+            points = rows * cols
+            count_error = abs(points - target)
+            ratio_error = abs(np.log((rows / cols) / preferred_ratio))
+            objective = 5.0 * count_error + target * ratio_error
+            if (
+                objective < best_objective
+                or (objective == best_objective and count_error < best_count_error)
+                or (
+                    objective == best_objective
+                    and count_error == best_count_error
+                    and ratio_error < best_ratio_error
+                )
+            ):
+                best_rows = rows
+                best_cols = cols
+                best_objective = objective
+                best_count_error = count_error
+                best_ratio_error = ratio_error
     return best_rows, best_cols
 
 

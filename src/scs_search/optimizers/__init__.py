@@ -52,6 +52,33 @@ def final_run_result(
     )
 
 
+def best_history_record(history: list[dict[str, Any]], *, score_key: str = "penalized_objective") -> dict[str, Any]:
+    """Return the highest-scoring search record from an optimizer history."""
+
+    if not history:
+        raise ValueError("Cannot choose a best history record from an empty history.")
+    return max((dict(record) for record in history), key=lambda record: float(record[score_key]))
+
+
+def optimizer_summary_payload(
+    *,
+    result: OptimizerRunResult,
+    config_bundle: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the compact on-disk optimizer summary."""
+
+    return {
+        "algorithm": result.algorithm,
+        "output_dir": result.output_dir,
+        "config": dict(config_bundle),
+        "metadata": dict(result.metadata),
+        "best_pattern": {
+            "theta": result.incumbent_theta,
+            "record": best_history_record(result.history),
+        },
+    }
+
+
 def unpack_run_config(run_config: Mapping[str, Any]) -> tuple[SimulationConfig, OptimizerConfig]:
     """Normalize the shared runner input contract used by the CLI scripts."""
 

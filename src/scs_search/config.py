@@ -19,9 +19,8 @@ THETA_NAMES: tuple[str, ...] = (
     "alpha2",
     "phi2",
 )
-DEFAULT_BUDGET_LEVELS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
-DEFAULT_SWEEP_EVALUATIONS: int = 100
-DEFAULT_SWEEP_SEED_TRIALS: int = 100
+DEFAULT_SWEEP_EVALUATIONS: int = 700
+DEFAULT_SWEEP_SEED_TRIALS: int = 700
 UPSTREAM_REPOS: dict[str, str] = {
     "SCSInSCIMechanisms": "ea349460de2a245ec5d3a929a00006b9ac821825",
     "GeneticAlgorithmSCSMotorControl": "67267ae076baa826812051ce81c8c20fe327808e",
@@ -41,7 +40,7 @@ def default_train_seeds() -> tuple[int, ...]:
 def default_report_seeds() -> tuple[int, ...]:
     """Default final-reporting seeds for incumbent evaluation."""
 
-    return (1001, 1002, 1003)
+    return tuple(range(1001, 1011))
 
 
 @dataclass(frozen=True)
@@ -126,7 +125,7 @@ class ParameterBounds:
 
 
 def default_theta_bounds() -> ParameterBounds:
-    """Return the default search box from the study plan."""
+    """Return the default search box for the pattern family."""
 
     return ParameterBounds(
         lower=(10.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
@@ -175,7 +174,6 @@ class DoseConfig:
     """Configuration for internal recruitment diagnostics and budget penalties."""
 
     max_frequency_hz: float = 1200.0
-    budget_levels: tuple[float, ...] = DEFAULT_BUDGET_LEVELS
     objective_penalty_weight: float = 10.0
     robust_std_weight: float = 0.25
     frequency_penalty_threshold_hz: float = 100.0
@@ -276,7 +274,6 @@ class EvaluationSummary:
     std_charge_rate_uc_per_s: float
     penalized_objective: float
     robust_objective: float
-    feasible_by_budget: dict[str, bool]
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
