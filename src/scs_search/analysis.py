@@ -17,10 +17,14 @@ def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | Non
 
     record = {
         "family": summary.family,
+        "valid": summary.valid,
+        "invalid_reason": summary.invalid_reason,
         "mean_corr": summary.mean_corr,
         "std_corr": summary.std_corr,
         "device_cost": summary.mean_device_cost,
         "std_device_cost": summary.std_device_cost,
+        "current_rate_usage": summary.mean_current_rate_usage,
+        "std_current_rate_usage": summary.std_current_rate_usage,
         "total_current_ma": summary.mean_total_current_ma,
         "charge_per_pulse_uc": summary.mean_charge_per_pulse_uc,
         "charge_rate_uc_per_s": summary.mean_charge_rate_uc_per_s,
@@ -65,7 +69,7 @@ def build_best_under_limit_frontier(records: Iterable[Mapping[str, Any]]) -> lis
 
 
 def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Compatibility wrapper for older call sites."""
+    """Alias for best-under-limit frontier construction."""
 
     return build_best_under_limit_frontier(records)
 

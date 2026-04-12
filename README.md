@@ -17,22 +17,22 @@ python -c "from neuron import h; print('NEURON OK')"
 
 ## Experiment
 
-We search over an 8-parameter stimulation pattern
-`theta = (f, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)`.
-Here, `f` sets pulse frequency, `T_on` and `T_off` set the repeating on/off structure, and the remaining parameters define a clipped two-harmonic envelope
+We search over a 9-parameter stimulation pattern
+`theta = (f, pw_us, T_on, T_off, alpha0, alpha1, phi1, alpha2, phi2)`.
+Here, `f` sets pulse frequency, `pw_us` sets pulse width, `T_on` and `T_off` set the repeating on/off structure, and the remaining parameters define a clipped two-harmonic envelope
 `alpha(t) = clip(alpha0 + alpha1 sin(2πt/T + phi1) + alpha2 sin(4πt/T + phi2), 0, 1)`,
-with `T = T_on + T_off`. Inside the simulator, `alpha(t)` is the recruited-fiber fraction. In the hardware-usage metric, the same `alpha(t)` is also treated as a simple fraction of maximum program current.
+with `T = T_on + T_off`. Inside the simulator, `alpha(t)` is sampled at pulse times to set delivered pulse amplitudes `alpha_k = alpha(t_k)`, with `I_k = 20 mA * alpha_k`; a deterministic afferent-fiber transduction layer then maps delivered pulses `(t_k, I_k, pw_us)` to recruited afferent spikes. The transduction rule uses an ordered strength-duration threshold with a shared chronaxie of `360 us`, an absolute refractory period of `0.7 ms`, and recovery to baseline threshold by `3.0 ms`, consistent with reported human sensory-fiber and posterior-root-reflex ranges ([Wesselink et al., 1999](https://ris.utwente.nl/ws/files/6644661/Wesselink_10.1007_BF02513291.pdf), [Tackmann and Lehmann, 1974](https://karger.com/ene/article-abstract/12/5-6/277/121996/Refractory-Period-in-Human-Sensory-Nerve-Fibres?redirectedFrom=PDF), [Gordineer et al., 2026](https://pubmed.ncbi.nlm.nih.gov/41324977/)).
 
 We chose this pattern family as a compromise between flexibility and tractability. It can represent standard tonic stimulation, turn stimulation on and off in repeating blocks through `T_on` and `T_off`, and add modest within-cycle modulation through the two harmonics. That allows for enough temporal variety to test non-tonic patterns without making the search space too large.
 
 ## Scoring
 
-The y-axis is pre-lesion EMG correlation. For each seed, the healthy pre-lesion EMG trace is compared with the lesion + SCS EMG trace from the same fine-motor task. Both traces are rectified and smoothed with a `25 ms` moving-average window, then scored by Pearson correlation. Lesion without stimulation is also generated as a reference condition, but the main experiment is broader than just the unstimulated lesion comparison: the grid sweep maps the pattern space, and the optimizers are compared by how efficiently they find high-correlation patterns.
+The y-axis is pre-lesion EMG correlation. For each seed, the healthy pre-lesion EMG trace is compared with the lesion + SCS EMG trace from the same fine-motor task. Both traces are rectified and smoothed with a `25 ms` moving-average window, then scored by Pearson correlation. Lesion without stimulation is also generated as a reference condition, and the main experiment maps the pattern space with a grid sweep before comparing optimizers by how efficiently they find high-correlation patterns.
 
-The x-axis is a normalized hardware-usage metric. The device manual gives a broad operating regime, including total program current up to `100 mA`, pulse width from `60-1000 us`, and frequency from `10-1200 Hz`:
+The x-axis is a normalized hardware-usage metric. The device manual gives an overall operating regime, including total program current up to `100 mA`, pulse width from `60-1000 us`, and frequency from `10-1200 Hz`:
 [`Medtronic Intellis 97715 manual mirror`](https://manuals.plus/m/bd8d5a123e572f58dbaa2dd8d7366ae8aee93c5247b73efb75873da0bd0a1ad6).
-Within that, this project uses a narrower setup: frequency is searched over `10-1200 Hz`, pulse width is fixed at `210 us`, and `alpha_k` is mapped to a conservative `50 mA` cap through `I_k = 50 mA * alpha_k`. Since larger `alpha_k` makes each pulse stronger and higher frequency produces more pulses over the run, both should increase hardware usage, so we sum the currents per pulse across the run and normalize by the amount that would be delivered at `50 mA` and `1200 Hz` over the same duration:
-`device_usage = sum_k I_k / (T_run * 50 mA * 1200 Hz)`.
+The search box used here is delivered current up to `20 mA`, pulse width from `60-600 us`, and frequency from `10-400 Hz`. The current cap is chosen to stay within reported sensory-threshold and discomfort-threshold ranges for epidural stimulation, while the pulse-width and frequency caps stay within commonly reported eSCS operating ranges ([Howell, Lad, and Grill, 2014](https://pmc.ncbi.nlm.nih.gov/articles/PMC4275184/), [Darrow et al., 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6648195/), [Peña Pino et al., 2022](https://pubmed.ncbi.nlm.nih.gov/35701485/)). Within that box, `alpha_k` maps to delivered current through `I_k = 20 mA * alpha_k`. Since larger `alpha_k` and larger `pw_us` make each pulse stronger and higher frequency produces more pulses over the run, we sum the delivered charge per pulse across the run and normalize by the maximum charge rate within these cited operating limits:
+`device_cost = sum_k (I_k * PW_k / 1000) / (T_run * 20 mA * 600 us * 400 Hz / 1000)`.
 
 ## Runs
 
@@ -64,7 +64,7 @@ If you run the stages manually, use them in that order:
 - Simulation duration: `1000 ms`
 - Lesion severity: `perc_supra_intact = 0.2`
 - Sweep budget: `700` seed-level trials by default with exactly `3` seeds per pattern
-- Sweep allocation: `~20%` tonic patterns, `~20%` duty-cycle patterns, and `~60%` Latin hypercube samples over the full 8-parameter space
+- Sweep allocation: `~20%` tonic patterns, `~20%` duty-cycle patterns, and `~60%` Latin hypercube samples over the full 9-parameter space
 - Optimizer budget: `700` seed-level trials by default with up to `3` seeds per pattern
 - Final reporting seeds: `10`
 
@@ -75,9 +75,9 @@ If you run the stages manually, use them in that order:
   - `emg_arrays.npz`: saved healthy pre-lesion and lesion-no-stim EMG traces reused by later scripts
   - `reference_emg.png`: three-panel train-seed comparison showing what the lesion does before any stimulation
 - `results/grid_sweep/`
-  - `patterns.jsonl`: one row per evaluated sweep pattern with its parameters, device usage, and correlation
+  - `patterns.jsonl`: one row per evaluated sweep pattern with its parameters, device cost, and correlation
   - `summary.json`: sweep settings, budget allocation, and the best pattern found in the sweep
-  - `frontier.png`: the sweep frontier, showing the best observed correlation available up to each device-usage level
+  - `frontier.png`: the sweep frontier, showing the best observed correlation available up to each device-cost level
   - `best_emg.png`: three-panel train-seed EMG comparison for the best grid-sweep pattern, so you can see the waveform match directly
   - `final_report_summary.json`: 10-seed reevaluation of that pattern
 - `results/cmaes/`, `results/turbo/`, `results/bohb/`
@@ -85,7 +85,7 @@ If you run the stages manually, use them in that order:
   - `summary.json`: run settings, search metadata, and the best pattern found during search
   - `best_emg.png`: three-panel train-seed EMG comparison for that best pattern, so you can inspect the waveform match for that method
   - `search_progress.png`: how quickly that optimizer improves the best pattern it has found as seed-level trials accumulate
-  - `frontier.png`: that optimizer's own frontier in device-usage/correlation space
+  - `frontier.png`: that optimizer's own frontier in device-cost/correlation space
   - `frontier_with_grid.png`: that optimizer's frontier overlaid on the grid-sweep frontier for direct comparison
   - `final_report_summary.json`: 10-seed reevaluation of that same pattern on the report seeds
 - `results/`

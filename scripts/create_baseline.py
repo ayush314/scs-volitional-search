@@ -120,8 +120,8 @@ def generate_and_plot_lesioned(
         freq_hz=40.0,
         alpha=0.0,
         t_end_ms=config.simulation_duration_ms,
+        pw_us=config.device_config.default_pulse_width_us,
         dt_ms=config.dt_ms,
-        pulse_width_us=config.device_config.default_pulse_width_us,
         device_config=config.device_config,
     )
 

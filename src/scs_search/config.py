@@ -11,6 +11,7 @@ import numpy as np
 DEFAULT_PULSE_WIDTH_US: float = 210.0
 THETA_NAMES: tuple[str, ...] = (
     "f",
+    "pw_us",
     "T_on",
     "T_off",
     "alpha0",
@@ -48,6 +49,7 @@ class PatternParameters:
     """Main stimulation parameterization."""
 
     f: float
+    pw_us: float
     T_on: float
     T_off: float
     alpha0: float
@@ -128,8 +130,8 @@ def default_theta_bounds() -> ParameterBounds:
     """Return the default search box for the pattern family."""
 
     return ParameterBounds(
-        lower=(10.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
-        upper=(1200.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
+        lower=(10.0, 60.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
+        upper=(400.0, 600.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
     )
 
 
@@ -159,27 +161,38 @@ class MetricConfig:
 
 @dataclass(frozen=True)
 class DeviceConfig:
-    """Hardware-budget approximation used for reporting and constraints."""
+    """Hardware-budget limits used for reporting and constraints."""
 
-    max_total_current_ma: float = 50.0
+    max_total_current_ma: float = 20.0
     min_pulse_width_us: float = 60.0
-    max_pulse_width_us: float = 1000.0
+    max_pulse_width_us: float = 600.0
     pulse_width_step_us: float = 10.0
-    max_master_rate_hz: float = 1200.0
-    fixed_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
+    max_master_rate_hz: float = 400.0
+    default_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
 
 
 @dataclass(frozen=True)
 class DoseConfig:
     """Configuration for internal recruitment diagnostics and budget penalties."""
 
-    max_frequency_hz: float = 1200.0
+    max_frequency_hz: float = 400.0
     objective_penalty_weight: float = 10.0
     robust_std_weight: float = 0.25
     frequency_penalty_threshold_hz: float = 100.0
     frequency_penalty_weight: float = 0.0
     high_recruitment_threshold: float = 0.8
     high_recruitment_weight: float = 0.0
+    invalid_objective_floor: float = -1.0
+
+
+@dataclass(frozen=True)
+class TransductionConfig:
+    """Internal settings for mapping delivered pulses to afferent spikes."""
+
+    enforce_no_overlap: bool = True
+    chronaxie_us: float = 360.0
+    absolute_refractory_ms: float = 0.7
+    relative_refractory_end_ms: float = 3.0
 
 
 @dataclass(frozen=True)
@@ -210,6 +223,7 @@ class SimulationConfig:
     metric_config: MetricConfig = field(default_factory=MetricConfig)
     device_config: DeviceConfig = field(default_factory=DeviceConfig)
     dose_config: DoseConfig = field(default_factory=DoseConfig)
+    transduction_config: TransductionConfig = field(default_factory=TransductionConfig)
 
 
 @dataclass(frozen=True)
@@ -230,6 +244,8 @@ class StimPattern:
     alpha_t: np.ndarray
     pulse_times_ms: np.ndarray
     pulse_alpha: np.ndarray
+    pulse_current_ma: np.ndarray
+    pulse_widths_us: np.ndarray
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -266,6 +282,8 @@ class EvaluationSummary:
     std_norm_dose: float
     mean_device_cost: float
     std_device_cost: float
+    mean_current_rate_usage: float
+    std_current_rate_usage: float
     mean_total_current_ma: float
     std_total_current_ma: float
     mean_charge_per_pulse_uc: float
@@ -274,6 +292,8 @@ class EvaluationSummary:
     std_charge_rate_uc_per_s: float
     penalized_objective: float
     robust_objective: float
+    valid: bool = True
+    invalid_reason: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -327,6 +347,7 @@ def dataclass_config_bundle(
         "metric_config": simulation_config.metric_config,
         "device_config": simulation_config.device_config,
         "dose_config": simulation_config.dose_config,
+        "transduction_config": simulation_config.transduction_config,
         "theta_bounds": simulation_config.theta_bounds,
     }
     if optimizer_config is not None:

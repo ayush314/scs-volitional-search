@@ -71,6 +71,8 @@ def optimizer_summary_payload(
         "algorithm": result.algorithm,
         "output_dir": result.output_dir,
         "config": dict(config_bundle),
+        "cost_metric": "device_cost",
+        "cost_metric_label": "normalized_charge_rate_usage",
         "metadata": dict(result.metadata),
         "best_pattern": {
             "theta": result.incumbent_theta,

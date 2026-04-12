@@ -160,7 +160,7 @@ def plot_frontier(
     baseline_label: str = "Lesion no stim baseline",
     title: str = "Pattern frontier",
 ) -> None:
-    """Plot restoration vs normalized device usage with the frontier overlay."""
+    """Plot restoration vs normalized charge-rate usage with the frontier overlay."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -174,7 +174,7 @@ def plot_frontier(
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized device usage")
+    ax.set_xlabel("Normalized charge-rate usage")
     ax.set_ylabel(SCORE_Y_LABEL)
     ax.set_title(title)
     ax.legend()
@@ -195,7 +195,7 @@ def plot_frontier_overlay(
     baseline_corr: float | None = None,
     baseline_label: str = "Lesion no stim baseline",
 ) -> None:
-    """Plot one device-usage frontier on top of another reference frontier."""
+    """Plot one charge-rate frontier on top of another reference frontier."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -218,7 +218,7 @@ def plot_frontier_overlay(
     )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized device usage")
+    ax.set_xlabel("Normalized charge-rate usage")
     ax.set_ylabel(SCORE_Y_LABEL)
     ax.set_title(f"{overlay_name} vs {base_name} frontier")
     ax.legend()
@@ -293,7 +293,7 @@ def plot_frontier_comparison(
     baseline_label: str = "Lesion no stim baseline",
     title: str = "Optimizer frontiers",
 ) -> None:
-    """Plot multiple device-usage frontiers on one shared axis."""
+    """Plot multiple charge-rate frontiers on one shared axis."""
 
     output = _prepare_output(output_path)
     fig, ax = plt.subplots(figsize=(7, 4))
@@ -310,7 +310,7 @@ def plot_frontier_comparison(
         )
     if baseline_corr is not None:
         ax.axhline(float(baseline_corr), color="C3", linestyle="--", linewidth=1.2, label=baseline_label)
-    ax.set_xlabel("Normalized device usage")
+    ax.set_xlabel("Normalized charge-rate usage")
     ax.set_ylabel(SCORE_Y_LABEL)
     ax.set_title(title)
     ax.legend()
@@ -329,7 +329,7 @@ def plot_pattern(pattern: StimPattern, output_path: str | Path) -> None:
     axes[0].set_title(f"Pattern family: {pattern.family}")
     axes[1].stem(pattern.pulse_times_ms, pattern.pulse_alpha, basefmt=" ")
     axes[1].set_xlabel(f"Time (ms, 0-{max(int(pattern.time_ms[-1]) if pattern.time_ms.size else 0, 0)})")
-    axes[1].set_ylabel("Pulse alpha")
+    axes[1].set_ylabel("Pulse amplitude (alpha)")
     fig.tight_layout()
     fig.savefig(output, dpi=200)
     plt.close(fig)

@@ -10,8 +10,8 @@ from scs_search.sweeps import run_sweep_suite, sweep_grid_values
 
 
 def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> EvaluationSummary:
-    pulse_width_us = 210.0
-    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) / 1200.0)
+    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) * float(theta.pw_us) / (400.0 * 600.0))
+    current_rate_usage = min(1.0, float(theta.alpha0) * float(theta.f) / 400.0)
     corr = 1.0 - 0.5 * device_cost
     return EvaluationSummary(
         theta=theta,
@@ -26,15 +26,19 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_norm_dose=0.0,
         mean_device_cost=device_cost,
         std_device_cost=0.0,
-        mean_total_current_ma=50.0 * float(theta.alpha0),
+        mean_current_rate_usage=current_rate_usage,
+        std_current_rate_usage=0.0,
+        mean_total_current_ma=20.0 * float(theta.alpha0),
         std_total_current_ma=0.0,
-        mean_charge_per_pulse_uc=float(theta.alpha0) * pulse_width_us / 10.0,
+        mean_charge_per_pulse_uc=20.0 * float(theta.alpha0) * float(theta.pw_us) / 1000.0,
         std_charge_per_pulse_uc=0.0,
-        mean_charge_rate_uc_per_s=device_cost * 120000.0,
+        mean_charge_rate_uc_per_s=device_cost * 4800.0,
         std_charge_rate_uc_per_s=0.0,
         penalized_objective=corr,
         robust_objective=corr,
-        metadata={"pulse_width_us": pulse_width_us},
+        valid=True,
+        invalid_reason=None,
+        metadata={"pulse_width_us": float(theta.pw_us), "usage_metric": "normalized_charge_rate_usage"},
     )
 
 
@@ -46,8 +50,10 @@ def test_run_sweep_suite_emits_device_cost_records(tmp_path, monkeypatch) -> Non
         lambda seed_trial_budget=100, seed_count=1: {
             "tonic_freqs": np.asarray([10.0, 20.0]),
             "tonic_alpha": np.asarray([0.2, 0.4]),
+            "tonic_pw_us": np.asarray([60.0, 210.0]),
             "duty_freqs": np.asarray([15.0]),
             "duty_cycle": np.asarray([0.5]),
+            "duty_pw_us": np.asarray([60.0, 600.0]),
             "full_theta_samples": np.asarray([2]),
         },
     )
@@ -61,6 +67,7 @@ def test_run_sweep_suite_emits_device_cost_records(tmp_path, monkeypatch) -> Non
     assert results["all"]
     assert all("device_cost" in record for record in results["all"])
     assert all("theta_T_on" in record for record in results["all"])
+    assert all("theta_pw_us" in record for record in results["all"])
     assert results["preset"]["seed_trial_budget"] == 7
 
     output_path = tmp_path / "frontier.png"
@@ -71,14 +78,14 @@ def test_run_sweep_suite_emits_device_cost_records(tmp_path, monkeypatch) -> Non
 def test_sweep_grid_values_allocates_from_seed_trial_budget() -> None:
     preset = sweep_grid_values(seed_trial_budget=100, seed_count=1)
 
-    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) == 20
-    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) == 20
-    assert int(preset["full_theta_samples"][0]) == 60
+    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) * len(preset["tonic_pw_us"]) == 18
+    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) * len(preset["duty_pw_us"]) == 18
+    assert int(preset["full_theta_samples"][0]) == 64
 
 
 def test_sweep_grid_values_stays_balanced_for_three_seed_budget() -> None:
     preset = sweep_grid_values(seed_trial_budget=700, seed_count=3)
 
-    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) == 48
-    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) == 48
-    assert int(preset["full_theta_samples"][0]) == 137
+    assert len(preset["tonic_freqs"]) * len(preset["tonic_alpha"]) * len(preset["tonic_pw_us"]) == 45
+    assert len(preset["duty_freqs"]) * len(preset["duty_cycle"]) * len(preset["duty_pw_us"]) == 45
+    assert int(preset["full_theta_samples"][0]) == 143

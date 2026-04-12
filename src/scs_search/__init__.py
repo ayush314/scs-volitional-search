@@ -12,6 +12,7 @@ from .config import (
     SimulationConfig,
     SimulationResult,
     StimPattern,
+    TransductionConfig,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "SimulationConfig",
     "SimulationResult",
     "StimPattern",
+    "TransductionConfig",
 ]

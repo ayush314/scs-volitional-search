@@ -24,7 +24,7 @@ from .config import (
 )
 from .dose import combined_objective, compute_pattern_dose
 from .metrics import compute_emg_similarity, mean_and_std_over_seeds
-from .patterns import generate_stim_pattern, generate_tonic_pattern
+from .patterns import generate_stim_pattern, generate_tonic_pattern, invalid_theta_reason
 from .plotting import display_name, lesion_label, plot_emg_seed_panels
 from .utils import ensure_dir, progress, write_json
 
@@ -38,6 +38,14 @@ class _StructuralState:
     W_scs: np.ndarray
     scs_delay: np.ndarray
     recruitment_order: np.ndarray
+
+
+@dataclass(frozen=True)
+class _TransductionResult:
+    """Delivered-pulse transduction into afferent-fiber spike trains."""
+
+    afferent_pulse_times: list[np.ndarray]
+    pulse_recruitment_fraction: np.ndarray
 
 
 _LOADED_MECHANISM_LIBRARIES: set[str] = set()
@@ -121,7 +129,7 @@ def _load_mechanism_library(h: Any, library: Path) -> None:
 
 
 def _load_neuron_backend(config: SimulationConfig) -> tuple[Any, Any, Any]:
-    """Load NEURON plus the upstream cells and helper modules."""
+    """Load NEURON plus the upstream cells and modules."""
 
     repo_root = _ensure_external_path(config)
     from neuron import h  # Imported lazily so unit tests can run without NEURON.
@@ -159,21 +167,62 @@ def _make_structural_state(config: SimulationConfig) -> _StructuralState:
     )
 
 
-def _pulse_times_by_source(pattern: StimPattern, num_sources: int, recruitment_order: np.ndarray) -> list[np.ndarray]:
-    """Convert pulse-wise recruitment fractions into nested per-source pulse trains."""
+def _transduce_pattern_to_afferent_fibers(
+    pattern: StimPattern,
+    config: SimulationConfig,
+    structural_state: _StructuralState,
+) -> _TransductionResult:
+    """Map delivered pulses into deterministic afferent-fiber spike trains."""
 
-    thresholds = np.empty(num_sources, dtype=float)
-    thresholds[recruitment_order] = (np.arange(num_sources, dtype=float) + 1.0) / float(num_sources)
-    source_times: list[list[float]] = [[] for _ in range(num_sources)]
-    for pulse_time, alpha in zip(pattern.pulse_times_ms, pattern.pulse_alpha):
-        active_sources = np.flatnonzero(thresholds <= float(alpha) + 1e-12)
-        for source_index in active_sources:
-            source_times[int(source_index)].append(float(pulse_time))
-    return [np.asarray(times, dtype=float) for times in source_times]
+    num_afferents = int(config.num_scs_total)
+    quantiles = np.empty(num_afferents, dtype=float)
+    quantiles[structural_state.recruitment_order] = (
+        np.arange(num_afferents, dtype=float) + 1.0
+    ) / float(num_afferents)
+    chronaxie_us = float(config.transduction_config.chronaxie_us)
+    max_current_ma = float(config.device_config.max_total_current_ma)
+    max_pulse_width_us = float(config.device_config.max_pulse_width_us)
+    absolute_refractory_ms = float(config.transduction_config.absolute_refractory_ms)
+    relative_refractory_end_ms = float(config.transduction_config.relative_refractory_end_ms)
+    rheobase_max_ma = max_current_ma / (1.0 + (chronaxie_us / max_pulse_width_us))
+    rheobase_ma = quantiles * rheobase_max_ma
+    afferent_pulse_times: list[list[float]] = [[] for _ in range(num_afferents)]
+    pulse_recruitment_fraction: list[float] = []
+    last_spike_times_ms = np.full(num_afferents, -np.inf, dtype=float)
+    for pulse_time, pulse_current_ma, pulse_width_us in zip(
+        pattern.pulse_times_ms,
+        pattern.pulse_current_ma,
+        pattern.pulse_widths_us,
+    ):
+        baseline_threshold_ma = rheobase_ma * (1.0 + (chronaxie_us / float(pulse_width_us)))
+        dt_since_last_spike_ms = float(pulse_time) - last_spike_times_ms
+        eligible = dt_since_last_spike_ms >= absolute_refractory_ms
+        effective_threshold_ma = baseline_threshold_ma.copy()
+        if relative_refractory_end_ms > absolute_refractory_ms:
+            recovering = eligible & (dt_since_last_spike_ms < relative_refractory_end_ms)
+            recovery_fraction = (
+                (dt_since_last_spike_ms[recovering] - absolute_refractory_ms)
+                / (relative_refractory_end_ms - absolute_refractory_ms)
+            )
+            recovery_fraction = np.clip(recovery_fraction, np.finfo(float).eps, 1.0)
+            effective_threshold_ma[recovering] = (
+                effective_threshold_ma[recovering] / recovery_fraction
+            )
+        active_afferents = np.flatnonzero(
+            eligible & (effective_threshold_ma <= float(pulse_current_ma) + 1e-12)
+        )
+        pulse_recruitment_fraction.append(float(active_afferents.size) / float(num_afferents))
+        for afferent_index in active_afferents:
+            afferent_pulse_times[int(afferent_index)].append(float(pulse_time))
+        last_spike_times_ms[active_afferents] = float(pulse_time)
+    return _TransductionResult(
+        afferent_pulse_times=[np.asarray(times, dtype=float) for times in afferent_pulse_times],
+        pulse_recruitment_fraction=np.asarray(pulse_recruitment_fraction, dtype=float),
+    )
 
 
 def _set_trial_seed(seed: int) -> None:
-    """Synchronize Python and NumPy RNGs for the stochastic upstream helpers."""
+    """Synchronize Python and NumPy RNGs for one trial seed."""
 
     np.random.seed(int(seed))
     random.seed(int(seed))
@@ -192,10 +241,10 @@ def _run_neuron_condition(
     h.load_file("stdrun.hoc")
 
     num_supraspinal = int(round(config.num_supraspinal_total * condition.perc_supra_intact))
-    source_pulses = _pulse_times_by_source(
+    transduction = _transduce_pattern_to_afferent_fibers(
         stim_pattern,
-        num_sources=config.num_scs_total,
-        recruitment_order=structural_state.recruitment_order,
+        config=config,
+        structural_state=structural_state,
     )
 
     _set_trial_seed(trial_seed)
@@ -212,7 +261,7 @@ def _run_neuron_condition(
 
     scs_neurons = []
     scs_vectors = []
-    for pulse_times in source_pulses:
+    for pulse_times in transduction.afferent_pulse_times:
         vec_stim = h.VecStim()
         vec = h.Vector(pulse_times.tolist())
         vec_stim.play(vec)
@@ -264,11 +313,16 @@ def _run_neuron_condition(
         emg_signal=np.asarray(emg_signal, dtype=float),
         mn_spike_times=mn_spike_times,
         supraspinal_spike_times=supraspinal_spikes,
-        scs_pulse_times=source_pulses,
+        scs_pulse_times=transduction.afferent_pulse_times,
         metadata={
             "num_supraspinal": num_supraspinal,
             "supraspinal_seed": int(trial_seed),
             "emg_seed": int(trial_seed + 10_000),
+            "mean_afferent_recruitment_fraction": (
+                float(np.mean(transduction.pulse_recruitment_fraction))
+                if transduction.pulse_recruitment_fraction.size
+                else 0.0
+            ),
             "kept_refs": all(
                 reference is not None
                 for reference in (syn_scs, nc_scs)
@@ -315,6 +369,72 @@ def run_condition(
     ]
 
 
+def _invalid_evaluation_summary(
+    theta: PatternParameters,
+    seeds: tuple[int, ...],
+    config: SimulationConfig,
+    invalid_reason: str,
+    budget_norm: float | None,
+) -> EvaluationSummary:
+    """Return a non-simulated summary for an infeasible stimulation pattern."""
+
+    floor = float(config.dose_config.invalid_objective_floor)
+    per_seed_records = [
+        {
+            "seed": int(seed),
+            "corr": floor,
+            "raw_recruitment_dose": 0.0,
+            "recruitment_dose_norm": 0.0,
+            "device_cost": 1.0,
+            "current_rate_usage": 1.0,
+            "total_current_ma": 0.0,
+            "charge_per_pulse_uc": 0.0,
+            "charge_rate_uc_per_s": 0.0,
+            "pulse_width_us": float(theta.pw_us),
+            "backend": config.backend,
+            "condition_label": "lesion_scs_invalid",
+            "theta": theta.to_dict(),
+            "valid": False,
+            "invalid_reason": invalid_reason,
+        }
+        for seed in seeds
+    ]
+    return EvaluationSummary(
+        theta=theta,
+        family="fourier",
+        seeds=seeds,
+        per_seed_records=per_seed_records,
+        mean_corr=floor,
+        std_corr=0.0,
+        mean_raw_dose=0.0,
+        std_raw_dose=0.0,
+        mean_norm_dose=0.0,
+        std_norm_dose=0.0,
+        mean_device_cost=1.0,
+        std_device_cost=0.0,
+        mean_current_rate_usage=1.0,
+        std_current_rate_usage=0.0,
+        mean_total_current_ma=0.0,
+        std_total_current_ma=0.0,
+        mean_charge_per_pulse_uc=0.0,
+        std_charge_per_pulse_uc=0.0,
+        mean_charge_rate_uc_per_s=0.0,
+        std_charge_rate_uc_per_s=0.0,
+        penalized_objective=floor,
+        robust_objective=floor,
+        valid=False,
+        invalid_reason=invalid_reason,
+        metadata={
+            "budget_norm": budget_norm,
+            "backend": config.backend,
+            "pulse_width_us": float(theta.pw_us),
+            "usage_metric": "normalized_charge_rate_usage",
+            "valid": False,
+            "invalid_reason": invalid_reason,
+        },
+    )
+
+
 def evaluate_pattern(
     theta: PatternParameters | dict[str, float] | tuple[float, ...] | list[float],
     seeds: Iterable[int],
@@ -328,6 +448,14 @@ def evaluate_pattern(
 
     healthy_condition, lesion_condition = condition_defaults(config)
     theta_params = config.theta_bounds.clip(theta)
+    seeds_tuple = coerce_seed_sequence(seeds, config.seed_config.train_seeds)
+    invalid_reason = invalid_theta_reason(
+        theta_params,
+        config.device_config,
+        enforce_no_overlap=config.transduction_config.enforce_no_overlap,
+    )
+    if invalid_reason is not None:
+        return _invalid_evaluation_summary(theta_params, seeds_tuple, config, invalid_reason, budget_norm)
     stim_pattern = generate_stim_pattern(
         theta_params,
         t_end_ms=config.simulation_duration_ms,
@@ -341,7 +469,6 @@ def evaluate_pattern(
         dt_ms=config.dt_ms,
         device_config=config.device_config,
     )
-    seeds_tuple = coerce_seed_sequence(seeds, config.seed_config.train_seeds)
 
     structural_state = _make_structural_state(config)
     if reference_emg_by_seed is None:
@@ -365,11 +492,18 @@ def evaluate_pattern(
     raw_dose_values: list[float] = []
     norm_dose_values: list[float] = []
     device_cost_values: list[float] = []
+    current_rate_values: list[float] = []
     total_current_values: list[float] = []
     charge_per_pulse_values: list[float] = []
     charge_rate_values: list[float] = []
     per_seed_records: list[dict[str, Any]] = []
-    dose_metrics = compute_pattern_dose(stim_pattern, config.dose_config, config.device_config)
+    transduction = _transduce_pattern_to_afferent_fibers(stim_pattern, config, structural_state)
+    dose_metrics = compute_pattern_dose(
+        stim_pattern,
+        pulse_recruitment_fraction=transduction.pulse_recruitment_fraction,
+        dose_config=config.dose_config,
+        device_config=config.device_config,
+    )
 
     for lesion_result in lesion_results:
         seed = int(lesion_result.trial_seed)
@@ -385,6 +519,7 @@ def evaluate_pattern(
         raw_dose_values.append(float(dose_metrics["raw_recruitment_dose"]))
         norm_dose_values.append(float(dose_metrics["recruitment_dose_norm"]))
         device_cost_values.append(float(dose_metrics["device_cost"]))
+        current_rate_values.append(float(dose_metrics["current_rate_usage"]))
         total_current_values.append(float(dose_metrics["mean_total_current_ma"]))
         charge_per_pulse_values.append(float(dose_metrics["mean_charge_per_pulse_uc"]))
         charge_rate_values.append(float(dose_metrics["charge_rate_uc_per_s"]))
@@ -395,6 +530,7 @@ def evaluate_pattern(
                 "raw_recruitment_dose": float(dose_metrics["raw_recruitment_dose"]),
                 "recruitment_dose_norm": float(dose_metrics["recruitment_dose_norm"]),
                 "device_cost": float(dose_metrics["device_cost"]),
+                "current_rate_usage": float(dose_metrics["current_rate_usage"]),
                 "total_current_ma": float(dose_metrics["mean_total_current_ma"]),
                 "charge_per_pulse_uc": float(dose_metrics["mean_charge_per_pulse_uc"]),
                 "charge_rate_uc_per_s": float(dose_metrics["charge_rate_uc_per_s"]),
@@ -402,6 +538,8 @@ def evaluate_pattern(
                 "backend": lesion_result.backend,
                 "condition_label": lesion_result.condition_label,
                 "theta": theta_params.to_dict(),
+                "valid": True,
+                "invalid_reason": None,
             }
         )
 
@@ -409,6 +547,7 @@ def evaluate_pattern(
     mean_raw_dose, std_raw_dose = mean_and_std_over_seeds(raw_dose_values)
     mean_norm_dose, std_norm_dose = mean_and_std_over_seeds(norm_dose_values)
     mean_device_cost, std_device_cost = mean_and_std_over_seeds(device_cost_values)
+    mean_current_rate_usage, std_current_rate_usage = mean_and_std_over_seeds(current_rate_values)
     mean_total_current_ma, std_total_current_ma = mean_and_std_over_seeds(total_current_values)
     mean_charge_per_pulse_uc, std_charge_per_pulse_uc = mean_and_std_over_seeds(charge_per_pulse_values)
     mean_charge_rate_uc_per_s, std_charge_rate_uc_per_s = mean_and_std_over_seeds(charge_rate_values)
@@ -420,7 +559,7 @@ def evaluate_pattern(
         dose_config=config.dose_config,
         robust=robust_objective,
         theta=theta_params,
-        pulse_alpha=stim_pattern.pulse_alpha,
+        pulse_recruitment_fraction=transduction.pulse_recruitment_fraction,
     )
     return EvaluationSummary(
         theta=theta_params,
@@ -435,6 +574,8 @@ def evaluate_pattern(
         std_norm_dose=std_norm_dose,
         mean_device_cost=mean_device_cost,
         std_device_cost=std_device_cost,
+        mean_current_rate_usage=mean_current_rate_usage,
+        std_current_rate_usage=std_current_rate_usage,
         mean_total_current_ma=mean_total_current_ma,
         std_total_current_ma=std_total_current_ma,
         mean_charge_per_pulse_uc=mean_charge_per_pulse_uc,
@@ -443,10 +584,15 @@ def evaluate_pattern(
         std_charge_rate_uc_per_s=std_charge_rate_uc_per_s,
         penalized_objective=penalized_score,
         robust_objective=robust_score,
+        valid=True,
+        invalid_reason=None,
         metadata={
             "budget_norm": budget_norm,
             "backend": config.backend,
             "pulse_width_us": float(dose_metrics["pulse_width_us"]),
+            "current_cap_ma": float(config.device_config.max_total_current_ma),
+            "usage_metric": "normalized_charge_rate_usage",
+            "valid": True,
         },
     )
 

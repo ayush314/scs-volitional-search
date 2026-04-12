@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,8 +19,8 @@ _RUN_BOHB_SPEC.loader.exec_module(run_bohb)
 
 
 def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> EvaluationSummary:
-    pulse_width_us = 210.0
-    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) / 1200.0)
+    device_cost = min(1.0, float(theta.alpha0) * float(theta.f) * float(theta.pw_us) / (400.0 * 600.0))
+    current_rate_usage = min(1.0, float(theta.alpha0) * float(theta.f) / 400.0)
     corr = 1.0 - device_cost
     return EvaluationSummary(
         theta=theta,
@@ -35,21 +35,26 @@ def _fake_summary(theta: PatternParameters, seeds: tuple[int, ...]) -> Evaluatio
         std_norm_dose=0.0,
         mean_device_cost=device_cost,
         std_device_cost=0.0,
-        mean_total_current_ma=50.0 * float(theta.alpha0),
+        mean_current_rate_usage=current_rate_usage,
+        std_current_rate_usage=0.0,
+        mean_total_current_ma=20.0 * float(theta.alpha0),
         std_total_current_ma=0.0,
-        mean_charge_per_pulse_uc=float(theta.alpha0) * pulse_width_us / 10.0,
+        mean_charge_per_pulse_uc=20.0 * float(theta.alpha0) * float(theta.pw_us) / 1000.0,
         std_charge_per_pulse_uc=0.0,
-        mean_charge_rate_uc_per_s=device_cost * 120000.0,
+        mean_charge_rate_uc_per_s=device_cost * 4800.0,
         std_charge_rate_uc_per_s=0.0,
         penalized_objective=corr,
         robust_objective=corr,
-        metadata={"pulse_width_us": pulse_width_us},
+        valid=True,
+        invalid_reason=None,
+        metadata={"pulse_width_us": float(theta.pw_us), "usage_metric": "normalized_charge_rate_usage"},
     )
 
 
 def test_run_bohb_writes_device_cost_outputs(tmp_path, monkeypatch) -> None:
     theta = PatternParameters(
         f=40.0,
+        pw_us=210.0,
         T_on=100.0,
         T_off=50.0,
         alpha0=0.5,
@@ -90,6 +95,8 @@ def test_run_bohb_writes_device_cost_outputs(tmp_path, monkeypatch) -> None:
     assert rows
     assert "device_cost" in rows[0]
     assert "theta_T_on" in rows[0]
+    assert "theta_pw_us" in rows[0]
+    assert summary_payload["cost_metric_label"] == "normalized_charge_rate_usage"
     assert "history" not in summary_payload
     assert "best_pattern" in summary_payload
     assert (output_dir / "frontier.png").exists()

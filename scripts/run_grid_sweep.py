@@ -44,6 +44,7 @@ def main() -> None:
             "config": dataclass_config_bundle(config),
             "preset": "default",
             "cost_metric": "device_cost",
+            "cost_metric_label": "normalized_charge_rate_usage",
             "num_patterns": len(sweep_results["all"]),
             "evaluation_seed_policy": "three_train_seeds_per_pattern",
             "train_seeds": list(seeds),
