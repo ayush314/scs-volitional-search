@@ -1,4 +1,4 @@
-"""Core package for patterned SCS search on the fine motor task."""
+"""Core package for the task-burst physical-modulation SCS study."""
 
 from .config import (
     DeviceConfig,
@@ -7,11 +7,13 @@ from .config import (
     MetricConfig,
     OptimizerConfig,
     OptimizerRunResult,
-    PatternParameters,
+    PhysicalModulationBounds,
+    PhysicalModulationParameters,
     SeedConfig,
     SimulationConfig,
     SimulationResult,
     StimPattern,
+    THETA_NAMES,
     TransductionConfig,
 )
 
@@ -22,10 +24,12 @@ __all__ = [
     "MetricConfig",
     "OptimizerConfig",
     "OptimizerRunResult",
-    "PatternParameters",
+    "PhysicalModulationBounds",
+    "PhysicalModulationParameters",
     "SeedConfig",
     "SimulationConfig",
     "SimulationResult",
     "StimPattern",
+    "THETA_NAMES",
     "TransductionConfig",
 ]

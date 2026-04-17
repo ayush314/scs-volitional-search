@@ -1,4 +1,4 @@
-"""Configuration objects and shared dataclasses for SCS search experiments."""
+"""Configuration objects and shared dataclasses for the task-burst physical-modulation study."""
 
 from __future__ import annotations
 
@@ -10,22 +10,14 @@ import numpy as np
 
 DEFAULT_PULSE_WIDTH_US: float = 210.0
 THETA_NAMES: tuple[str, ...] = (
-    "f",
-    "pw_us",
-    "T_on",
-    "T_off",
-    "alpha0",
-    "alpha1",
-    "phi1",
-    "alpha2",
-    "phi2",
+    "I0_ma",
+    "I1_ma",
+    "f0_hz",
+    "f1_hz",
+    "PW1_us",
+    "T_ms",
 )
-DEFAULT_SWEEP_EVALUATIONS: int = 700
-DEFAULT_SWEEP_SEED_TRIALS: int = 700
-UPSTREAM_REPOS: dict[str, str] = {
-    "SCSInSCIMechanisms": "ea349460de2a245ec5d3a929a00006b9ac821825",
-    "GeneticAlgorithmSCSMotorControl": "67267ae076baa826812051ce81c8c20fe327808e",
-}
+DEFAULT_SWEEP_SEED_TRIALS: int = 1000
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parent.parent
@@ -45,32 +37,44 @@ def default_report_seeds() -> tuple[int, ...]:
 
 
 @dataclass(frozen=True)
-class PatternParameters:
-    """Main stimulation parameterization."""
+class PhysicalModulationParameters:
+    """Shared-wave physical pulse-control parameterization."""
 
-    f: float
-    pw_us: float
-    T_on: float
-    T_off: float
-    alpha0: float
-    alpha1: float
-    phi1: float
-    alpha2: float
-    phi2: float
+    I0_ma: float
+    I1_ma: float
+    f0_hz: float
+    f1_hz: float
+    PW1_us: float
+    T_ms: float
 
     @classmethod
-    def from_any(cls, theta: Sequence[float] | Mapping[str, float] | "PatternParameters") -> "PatternParameters":
-        """Normalize a user-provided theta representation to a dataclass."""
+    def from_any(
+        cls,
+        theta: Sequence[float] | Mapping[str, float] | "PhysicalModulationParameters",
+    ) -> "PhysicalModulationParameters":
+        """Normalize one user-provided theta representation."""
 
         if isinstance(theta, cls):
             return theta
         if isinstance(theta, Mapping):
             values = dict(theta)
-            if "a1" in values and "alpha1" not in values:
-                values["alpha1"] = values["a1"]
-            if "a2" in values and "alpha2" not in values:
-                values["alpha2"] = values["a2"]
-            return cls(**{name: float(values[name]) for name in THETA_NAMES})
+            aliases = {
+                "I0_ma": ("I0_ma", "I0", "i0_ma", "i0"),
+                "I1_ma": ("I1_ma", "I1", "i1_ma", "i1"),
+                "f0_hz": ("f0_hz", "f0"),
+                "f1_hz": ("f1_hz", "f1"),
+                "PW1_us": ("PW1_us", "PW1", "pw1_us", "pw1"),
+                "T_ms": ("T_ms", "T", "period_ms"),
+            }
+            normalized: dict[str, float] = {}
+            for name, candidates in aliases.items():
+                for candidate in candidates:
+                    if candidate in values:
+                        normalized[name] = float(values[candidate])
+                        break
+                else:
+                    raise KeyError(f"Missing physical modulation parameter `{name}`.")
+            return cls(**normalized)
         if len(theta) != len(THETA_NAMES):
             raise ValueError(f"Expected {len(THETA_NAMES)} parameters, received {len(theta)}.")
         return cls(**{name: float(value) for name, value in zip(THETA_NAMES, theta)})
@@ -86,13 +90,37 @@ class PatternParameters:
         return {name: float(getattr(self, name)) for name in THETA_NAMES}
 
 
-@dataclass(frozen=True)
-class ParameterBounds:
-    """Box constraints for the stimulation search space."""
+def theta_to_dict(theta: Any) -> dict[str, float]:
+    """Return a JSON-friendly theta mapping."""
 
-    lower: tuple[float, ...]
-    upper: tuple[float, ...]
+    if hasattr(theta, "to_dict"):
+        values = theta.to_dict()
+        return {str(key): float(value) for key, value in values.items()}
+    if isinstance(theta, Mapping):
+        return {str(key): float(value) for key, value in theta.items()}
+    raise TypeError("Theta values must provide `to_dict()` or be a mapping.")
+
+
+@dataclass(frozen=True)
+class DeviceConfig:
+    """Hardware-budget limits used for reporting and constraints."""
+
+    max_total_current_ma: float = 20.0
+    min_pulse_width_us: float = 60.0
+    max_pulse_width_us: float = 600.0
+    pulse_width_step_us: float = 10.0
+    max_master_rate_hz: float = 400.0
+    default_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
+
+
+@dataclass(frozen=True)
+class PhysicalModulationBounds:
+    """Box constraints for the physical-modulation search space."""
+
+    lower: tuple[float, ...] = (0.0, 0.0, 10.0, 0.0, 0.0, 50.0)
+    upper: tuple[float, ...] = (20.0, 20.0, 400.0, 390.0, 150.0, 1000.0)
     names: tuple[str, ...] = THETA_NAMES
+    baseline_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
 
     def __post_init__(self) -> None:
         if len(self.lower) != len(self.upper) or len(self.lower) != len(self.names):
@@ -100,39 +128,100 @@ class ParameterBounds:
         if any(lo >= hi for lo, hi in zip(self.lower, self.upper)):
             raise ValueError("Each lower bound must be strictly less than its upper bound.")
 
-    def clip(self, theta: Sequence[float] | Mapping[str, float] | PatternParameters) -> PatternParameters:
-        """Clip a theta vector into the configured box."""
+    def _i1_cap(self, i0_ma: float, device_config: DeviceConfig) -> float:
+        return float(
+            min(
+                max(i0_ma, 0.0),
+                max(float(device_config.max_total_current_ma) - i0_ma, 0.0),
+                self.upper[1],
+            )
+        )
 
-        params = PatternParameters.from_any(theta).to_array()
-        lower = np.asarray(self.lower, dtype=float)
-        upper = np.asarray(self.upper, dtype=float)
-        clipped = np.clip(params, lower, upper)
-        return PatternParameters.from_any(clipped)
+    def _f1_cap(self, f0_hz: float, device_config: DeviceConfig) -> float:
+        f_min = float(self.lower[2])
+        f_max = float(device_config.max_master_rate_hz)
+        return float(min(max(f0_hz - f_min, 0.0), max(f_max - f0_hz, 0.0), self.upper[3]))
 
-    def decode_unit(self, unit_point: Sequence[float]) -> PatternParameters:
-        """Map a point from [0, 1]^d into the bounded parameter space."""
+    def _pw1_cap(self, device_config: DeviceConfig) -> float:
+        pw0_us = float(self.baseline_pulse_width_us)
+        return float(
+            min(
+                max(pw0_us - float(device_config.min_pulse_width_us), 0.0),
+                max(float(device_config.max_pulse_width_us) - pw0_us, 0.0),
+                self.upper[4],
+            )
+        )
+
+    def _coerce_mapping(
+        self,
+        theta: Sequence[float] | Mapping[str, float] | PhysicalModulationParameters,
+    ) -> dict[str, float]:
+        if isinstance(theta, PhysicalModulationParameters):
+            return theta.to_dict()
+        if isinstance(theta, Mapping):
+            return PhysicalModulationParameters.from_any(theta).to_dict()
+        if len(theta) != len(self.names):
+            raise ValueError(f"Expected {len(self.names)} parameters, received {len(theta)}.")
+        return {name: float(value) for name, value in zip(self.names, theta)}
+
+    def _clip_mapping(self, values: Mapping[str, float], device_config: DeviceConfig) -> dict[str, float]:
+        clipped = {
+            "I0_ma": float(
+                np.clip(values["I0_ma"], self.lower[0], min(self.upper[0], float(device_config.max_total_current_ma)))
+            ),
+            "I1_ma": float(np.clip(values["I1_ma"], self.lower[1], self.upper[1])),
+            "f0_hz": float(
+                np.clip(values["f0_hz"], self.lower[2], min(self.upper[2], float(device_config.max_master_rate_hz)))
+            ),
+            "f1_hz": float(np.clip(values["f1_hz"], self.lower[3], self.upper[3])),
+            "PW1_us": float(np.clip(values["PW1_us"], self.lower[4], self._pw1_cap(device_config))),
+            "T_ms": float(np.clip(values["T_ms"], self.lower[5], self.upper[5])),
+        }
+        clipped["I1_ma"] = float(np.clip(clipped["I1_ma"], self.lower[1], self._i1_cap(clipped["I0_ma"], device_config)))
+        clipped["f1_hz"] = float(np.clip(clipped["f1_hz"], self.lower[3], self._f1_cap(clipped["f0_hz"], device_config)))
+        clipped["PW1_us"] = float(np.clip(clipped["PW1_us"], self.lower[4], self._pw1_cap(device_config)))
+        return clipped
+
+    def clip(
+        self,
+        theta: Sequence[float] | Mapping[str, float] | PhysicalModulationParameters,
+        *,
+        device_config: DeviceConfig | None = None,
+    ) -> PhysicalModulationParameters:
+        """Clip a theta value into the configured box."""
+
+        config = device_config or DeviceConfig()
+        values = self._coerce_mapping(theta)
+        return PhysicalModulationParameters.from_any(self._clip_mapping(values, config))
+
+    def decode_unit(
+        self,
+        unit_point: Sequence[float],
+        *,
+        device_config: DeviceConfig | None = None,
+    ) -> PhysicalModulationParameters:
+        """Map one point from [0, 1]^d into the bounded parameter space."""
 
         point = np.clip(np.asarray(unit_point, dtype=float), 0.0, 1.0)
         lower = np.asarray(self.lower, dtype=float)
         upper = np.asarray(self.upper, dtype=float)
-        return PatternParameters.from_any(lower + point * (upper - lower))
+        values = {name: float(value) for name, value in zip(self.names, lower + point * (upper - lower))}
+        return self.clip(values, device_config=device_config)
 
-    def encode_unit(self, theta: Sequence[float] | Mapping[str, float] | PatternParameters) -> np.ndarray:
-        """Map a theta vector into [0, 1]^d."""
+    def encode_unit(
+        self,
+        theta: Sequence[float] | Mapping[str, float] | PhysicalModulationParameters,
+        *,
+        device_config: DeviceConfig | None = None,
+    ) -> np.ndarray:
+        """Map one theta value into [0, 1]^d."""
 
-        params = PatternParameters.from_any(theta).to_array()
+        config = device_config or DeviceConfig()
+        values = self._clip_mapping(self._coerce_mapping(theta), config)
+        params = np.asarray([values[name] for name in self.names], dtype=float)
         lower = np.asarray(self.lower, dtype=float)
         upper = np.asarray(self.upper, dtype=float)
         return np.clip((params - lower) / (upper - lower), 0.0, 1.0)
-
-
-def default_theta_bounds() -> ParameterBounds:
-    """Return the default search box for the pattern family."""
-
-    return ParameterBounds(
-        lower=(10.0, 60.0, 50.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
-        upper=(400.0, 600.0, 500.0, 500.0, 0.9, 0.5, 2.0 * np.pi, 0.5, 2.0 * np.pi),
-    )
 
 
 @dataclass(frozen=True)
@@ -160,18 +249,6 @@ class MetricConfig:
 
 
 @dataclass(frozen=True)
-class DeviceConfig:
-    """Hardware-budget limits used for reporting and constraints."""
-
-    max_total_current_ma: float = 20.0
-    min_pulse_width_us: float = 60.0
-    max_pulse_width_us: float = 600.0
-    pulse_width_step_us: float = 10.0
-    max_master_rate_hz: float = 400.0
-    default_pulse_width_us: float = DEFAULT_PULSE_WIDTH_US
-
-
-@dataclass(frozen=True)
 class DoseConfig:
     """Configuration for internal recruitment diagnostics and budget penalties."""
 
@@ -190,6 +267,7 @@ class TransductionConfig:
     """Internal settings for mapping delivered pulses to afferent spikes."""
 
     enforce_no_overlap: bool = True
+    mode: str = "strength_duration"
     chronaxie_us: float = 360.0
     absolute_refractory_ms: float = 0.7
     relative_refractory_end_ms: float = 3.0
@@ -201,6 +279,7 @@ class SimulationConfig:
 
     backend: str = "neuron"
     dt_ms: float = 1.0
+    pulse_scheduler_dt_ms: float = 0.1
     simulation_duration_ms: int = 1000
     num_scs_total: int = 60
     num_supraspinal_total: int = 300
@@ -212,13 +291,22 @@ class SimulationConfig:
     synapse_shape: float = 1.2
     synapse_tau_ms: float = 2.0
     supraspinal_rate_hz: float = 60.0
-    supraspinal_inhomogeneous_rate_hz: float = 0.001
+    supraspinal_drive_mode: str = "aperiodic_envelope"
+    supraspinal_rate_floor_hz: float = 0.0
+    supraspinal_envelope_control_dt_ms: float = 100.0
+    supraspinal_envelope_smoothing_sigma_ms: float = 25.0
+    supraspinal_envelope_ar_rho: float = 0.85
+    supraspinal_task_burst_min_ms: float = 120.0
+    supraspinal_task_burst_max_ms: float = 260.0
+    supraspinal_task_gap_min_ms: float = 80.0
+    supraspinal_task_gap_max_ms: float = 220.0
+    supraspinal_inhomogeneous_rate_hz: float = 0.002
     healthy_perc_supra_intact: float = 1.0
     lesion_perc_supra_intact: float = 0.2
     baseline_cycle_ms: float = 500.0
     structural_seed: int = 672945
     external_root: str = str(EXTERNAL_ROOT)
-    theta_bounds: ParameterBounds = field(default_factory=default_theta_bounds)
+    theta_bounds: PhysicalModulationBounds = field(default_factory=PhysicalModulationBounds)
     seed_config: SeedConfig = field(default_factory=SeedConfig)
     metric_config: MetricConfig = field(default_factory=MetricConfig)
     device_config: DeviceConfig = field(default_factory=DeviceConfig)
@@ -239,7 +327,7 @@ class StimPattern:
     """Time-indexed stimulation structure consumed by the simulator adapter."""
 
     family: str
-    theta: PatternParameters
+    theta: Any
     time_ms: np.ndarray
     alpha_t: np.ndarray
     pulse_times_ms: np.ndarray
@@ -268,9 +356,9 @@ class SimulationResult:
 
 @dataclass
 class EvaluationSummary:
-    """Aggregate statistics for a stimulation pattern across repeated seeds."""
+    """Aggregate statistics for one stimulation pattern across repeated seeds."""
 
-    theta: PatternParameters
+    theta: Any
     family: str
     seeds: tuple[int, ...]
     per_seed_records: list[dict[str, Any]]
@@ -290,6 +378,8 @@ class EvaluationSummary:
     std_charge_per_pulse_uc: float
     mean_charge_rate_uc_per_s: float
     std_charge_rate_uc_per_s: float
+    mean_relative_envelope_rmse: float
+    std_relative_envelope_rmse: float
     penalized_objective: float
     robust_objective: float
     valid: bool = True
@@ -320,7 +410,7 @@ class OptimizerRunResult:
 
     algorithm: str
     output_dir: str
-    incumbent_theta: PatternParameters
+    incumbent_theta: Any
     incumbent_summary: EvaluationSummary
     history: list[dict[str, Any]]
     metadata: dict[str, Any] = field(default_factory=dict)

@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import json
+import pickle
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 
 import numpy as np
 from scipy.stats import qmc
-
-from .config import REPO_ROOT
 
 try:
     from tqdm.auto import tqdm as _tqdm
@@ -46,12 +44,6 @@ class _NullProgress:
         self.close()
 
 
-def repo_root() -> Path:
-    """Return the repository root."""
-
-    return REPO_ROOT
-
-
 def progress(iterable: Iterable[Any] | None = None, **kwargs: Any) -> Any:
     """Return a tqdm progress bar when available, otherwise a no-op wrapper."""
 
@@ -66,21 +58,6 @@ def ensure_dir(path: str | Path) -> Path:
     directory = Path(path)
     directory.mkdir(parents=True, exist_ok=True)
     return directory
-
-
-def utc_timestamp() -> str:
-    """Return a compact UTC timestamp for result directories."""
-
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-
-def make_run_dir(base_dir: str | Path, prefix: str) -> Path:
-    """Create a timestamped run directory."""
-
-    base_path = ensure_dir(base_dir)
-    run_dir = base_path / f"{prefix}_{utc_timestamp()}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
 
 
 def to_serializable(value: Any) -> Any:
@@ -119,6 +96,15 @@ def write_jsonl(path: str | Path, rows: Iterable[Any]) -> None:
             handle.write(json.dumps(to_serializable(row), sort_keys=True) + "\n")
 
 
+def write_pickle(path: str | Path, data: Any) -> None:
+    """Write a Python pickle to disk."""
+
+    output_path = Path(path)
+    ensure_dir(output_path.parent)
+    with output_path.open("wb") as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
 def read_json(path: str | Path) -> Any:
     """Read a JSON file."""
 
@@ -130,6 +116,13 @@ def read_jsonl(path: str | Path) -> list[Any]:
 
     with Path(path).open("r", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def read_pickle(path: str | Path) -> Any:
+    """Read a Python pickle from disk."""
+
+    with Path(path).open("rb") as handle:
+        return pickle.load(handle)
 
 
 def latin_hypercube_samples(dim: int, n_samples: int, seed: int) -> np.ndarray:
@@ -150,14 +143,3 @@ def flatten_dict(prefix: str, mapping: Mapping[str, Any]) -> dict[str, Any]:
         else:
             flat[full_key] = value
     return flat
-
-
-def summarise_trace(values: Sequence[float]) -> list[float]:
-    """Return the best-so-far trace for plotting."""
-
-    trace: list[float] = []
-    best = -np.inf
-    for value in values:
-        best = max(best, float(value))
-        trace.append(best)
-    return trace

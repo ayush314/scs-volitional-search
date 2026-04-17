@@ -14,18 +14,8 @@ __pycache__/
 *.egg-info/
 
 external/
-!external/.gitkeep
-
 results/
-!results/.gitkeep
 
 *.log
-*.csv.tmp
-*.json.tmp
-*.jsonl.tmp
 
 .ipynb_checkpoints/
-
-external/SCSInSCIMechanisms/x86_64/
-external/SCSInSCIMechanisms/arm64/
-external/SCSInSCIMechanisms/libnrnmech.dylib

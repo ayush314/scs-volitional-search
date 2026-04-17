@@ -21,6 +21,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the full reference, sweep, optimizer, and summary pipeline.")
     parser.add_argument("--results-root", default="results")
     parser.add_argument("--seed-trial-budget", type=int, default=DEFAULT_SWEEP_SEED_TRIALS)
+    parser.add_argument(
+        "--supraspinal-drive-mode",
+        choices=("aperiodic_envelope", "sinusoidal"),
+        default="aperiodic_envelope",
+    )
     return parser.parse_args()
 
 
@@ -38,7 +43,16 @@ def main() -> None:
     repo_root = REPO_ROOT
     results_root = Path(args.results_root)
 
-    run_step(["scripts/run_prelesion_reference.py", "--output-dir", str(results_root / "reference")], repo_root)
+    run_step(
+        [
+            "scripts/run_prelesion_reference.py",
+            "--output-dir",
+            str(results_root / "reference"),
+            "--supraspinal-drive-mode",
+            args.supraspinal_drive_mode,
+        ],
+        repo_root,
+    )
     run_step(
         [
             "scripts/run_grid_sweep.py",
@@ -46,6 +60,8 @@ def main() -> None:
             str(args.seed_trial_budget),
             "--output-dir",
             str(results_root / "grid_sweep"),
+            "--supraspinal-drive-mode",
+            args.supraspinal_drive_mode,
         ],
         repo_root,
     )
@@ -56,6 +72,8 @@ def main() -> None:
             str(args.seed_trial_budget),
             "--output-dir",
             str(results_root / "cmaes"),
+            "--supraspinal-drive-mode",
+            args.supraspinal_drive_mode,
         ],
         repo_root,
     )
@@ -66,6 +84,8 @@ def main() -> None:
             str(args.seed_trial_budget),
             "--output-dir",
             str(results_root / "turbo"),
+            "--supraspinal-drive-mode",
+            args.supraspinal_drive_mode,
         ],
         repo_root,
     )
@@ -76,6 +96,8 @@ def main() -> None:
             str(args.seed_trial_budget),
             "--output-dir",
             str(results_root / "bohb"),
+            "--supraspinal-drive-mode",
+            args.supraspinal_drive_mode,
         ],
         repo_root,
     )

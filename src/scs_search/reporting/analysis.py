@@ -7,9 +7,9 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
-from .config import EvaluationSummary, MetricConfig
-from .metrics import compute_emg_similarity, mean_and_std_over_seeds
-from .utils import read_json
+from ..config import EvaluationSummary, MetricConfig, theta_to_dict
+from ..metrics import compute_emg_similarity, mean_and_std_over_seeds
+from ..utils import read_json
 
 
 def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -28,11 +28,13 @@ def summary_to_record(summary: EvaluationSummary, extra: Mapping[str, Any] | Non
         "total_current_ma": summary.mean_total_current_ma,
         "charge_per_pulse_uc": summary.mean_charge_per_pulse_uc,
         "charge_rate_uc_per_s": summary.mean_charge_rate_uc_per_s,
+        "relative_envelope_rmse": summary.mean_relative_envelope_rmse,
+        "std_relative_envelope_rmse": summary.std_relative_envelope_rmse,
         "recruitment_raw_dose": summary.mean_raw_dose,
         "recruitment_norm_dose": summary.mean_norm_dose,
         "penalized_objective": summary.penalized_objective,
         "robust_objective": summary.robust_objective,
-        **{f"theta_{key}": value for key, value in summary.theta.to_dict().items()},
+        **{f"theta_{key}": value for key, value in theta_to_dict(summary.theta).items()},
     }
     if extra:
         record.update(dict(extra))
@@ -68,10 +70,34 @@ def build_best_under_limit_frontier(records: Iterable[Mapping[str, Any]]) -> lis
     return frontier
 
 
-def build_upper_hull_frontier(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Alias for best-under-limit frontier construction."""
+def filter_history_by_seed_budget(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    required_seed_budget: int,
+) -> list[dict[str, Any]]:
+    """Keep only history rows evaluated at one requested seed budget."""
 
-    return build_best_under_limit_frontier(records)
+    filtered: list[dict[str, Any]] = []
+    for record in records:
+        seed_budget = record.get("seed_budget")
+        if seed_budget is None or int(seed_budget) == int(required_seed_budget):
+            filtered.append(dict(record))
+    return filtered
+
+
+def comparable_optimizer_history(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    algorithm: str,
+    required_seed_budget: int,
+) -> list[dict[str, Any]]:
+    """Return the subset of optimizer records that should be used for fair plots."""
+
+    history = [dict(record) for record in records]
+    if algorithm != "bohb":
+        return history
+    filtered = filter_history_by_seed_budget(history, required_seed_budget=required_seed_budget)
+    return filtered or history
 
 
 def best_record(
@@ -108,16 +134,53 @@ def best_so_far_trace(
     return trace
 
 
-def reference_baseline_stats(reference_dir: str | Path, metric_config: MetricConfig) -> dict[str, Any] | None:
+def _normalize_seed_tuple(seeds: Iterable[int] | None) -> tuple[int, ...]:
+    """Return one stable tuple of unique integer seeds."""
+
+    if seeds is None:
+        return ()
+    return tuple(dict.fromkeys(int(seed) for seed in seeds))
+
+
+def _same_seed_set(left: Iterable[int] | None, right: Iterable[int] | None) -> bool:
+    """Return whether two seed collections refer to the same unique set."""
+
+    return set(_normalize_seed_tuple(left)) == set(_normalize_seed_tuple(right))
+
+
+def reference_baseline_stats(
+    reference_dir: str | Path,
+    metric_config: MetricConfig,
+    *,
+    seeds: Iterable[int] | None = None,
+) -> dict[str, Any] | None:
     """Return lesion-without-stim correlation against healthy pre-lesion."""
 
     reference_path = Path(reference_dir)
     summary_file = reference_path / "summary.json"
+    requested_seeds = _normalize_seed_tuple(seeds)
     if summary_file.exists():
         summary = read_json(summary_file)
-        baseline = summary.get("lesion_no_stim_baseline")
-        if baseline is not None:
-            return baseline
+        if requested_seeds:
+            train_seeds = summary.get("train_seeds", ())
+            report_seeds = summary.get("report_seeds", ())
+            all_seeds = summary.get("seeds", ()) or tuple(dict.fromkeys(_normalize_seed_tuple(train_seeds) + _normalize_seed_tuple(report_seeds)))
+            if _same_seed_set(requested_seeds, train_seeds):
+                baseline = summary.get("lesion_no_stim_baseline_train")
+                if baseline is not None:
+                    return baseline
+            if _same_seed_set(requested_seeds, report_seeds):
+                baseline = summary.get("lesion_no_stim_baseline_report")
+                if baseline is not None:
+                    return baseline
+            if _same_seed_set(requested_seeds, all_seeds):
+                baseline = summary.get("lesion_no_stim_baseline_all") or summary.get("lesion_no_stim_baseline")
+                if baseline is not None:
+                    return baseline
+        else:
+            baseline = summary.get("lesion_no_stim_baseline_all") or summary.get("lesion_no_stim_baseline")
+            if baseline is not None:
+                return baseline
 
     emg_path = reference_path / "emg_arrays.npz"
     if not emg_path.exists():
@@ -137,6 +200,9 @@ def reference_baseline_stats(reference_dir: str | Path, metric_config: MetricCon
             if name.startswith("lesion_no_stim_seed_")
         }
     common_seeds = sorted(set(healthy_by_seed) & set(lesion_by_seed))
+    if requested_seeds:
+        requested_seed_set = set(requested_seeds)
+        common_seeds = [seed for seed in common_seeds if seed in requested_seed_set]
     for seed in common_seeds:
         scores.append(
             compute_emg_similarity(

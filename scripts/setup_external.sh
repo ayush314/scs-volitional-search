@@ -6,8 +6,6 @@ EXTERNAL_DIR="${ROOT_DIR}/external"
 
 SCS_REPO_URL="https://github.com/jostrows9/SCSInSCIMechanisms.git"
 SCS_COMMIT="ea349460de2a245ec5d3a929a00006b9ac821825"
-GA_REPO_URL="https://github.com/jostrows9/GeneticAlgorithmSCSMotorControl.git"
-GA_COMMIT="67267ae076baa826812051ce81c8c20fe327808e"
 
 clone_or_update() {
   local repo_url="$1"
@@ -40,7 +38,6 @@ install_requirements() {
 
 mkdir -p "${EXTERNAL_DIR}"
 clone_or_update "${SCS_REPO_URL}" "${EXTERNAL_DIR}/SCSInSCIMechanisms" "${SCS_COMMIT}"
-clone_or_update "${GA_REPO_URL}" "${EXTERNAL_DIR}/GeneticAlgorithmSCSMotorControl" "${GA_COMMIT}"
 
 install_requirements "${EXTERNAL_DIR}/SCSInSCIMechanisms/requirements.txt"
 
@@ -49,12 +46,10 @@ External repositories are ready.
 
 Pinned commits:
   SCSInSCIMechanisms: ${SCS_COMMIT}
-  GeneticAlgorithmSCSMotorControl: ${GA_COMMIT}
 
 Next steps:
   1. If needed, install the local package in the active uv environment:
        uv pip install -e ".[optim,dev]"
   2. Run ./scripts/build_neuron.sh
-  3. Run python scripts/run_prelesion_reference.py --output-dir results/reference
-  4. Run python scripts/run_grid_sweep.py --output-dir results/grid_sweep
+  3. Run python scripts/run_all.py
 EOF

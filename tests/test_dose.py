@@ -6,7 +6,7 @@ import numpy as np
 
 from scs_search.config import DeviceConfig, DoseConfig
 from scs_search.dose import combined_objective, compute_pattern_dose, raw_dose_from_pulse_recruitment
-from scs_search.patterns import generate_tonic_pattern
+from scs_search.stimulation.patterns import generate_tonic_pattern
 
 
 def test_raw_dose_is_sum_of_realized_recruitment() -> None:

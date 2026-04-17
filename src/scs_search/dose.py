@@ -6,7 +6,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from .config import DeviceConfig, DoseConfig, PatternParameters, StimPattern
+from .config import DeviceConfig, DoseConfig, StimPattern, theta_to_dict
 
 
 def raw_dose_from_pulse_recruitment(pulse_recruitment_fraction: Sequence[float]) -> float:
@@ -107,10 +107,17 @@ def compute_pattern_dose(
     }
 
 
-def frequency_penalty(theta: PatternParameters, dose_config: DoseConfig) -> float:
+def frequency_penalty(theta: Any, dose_config: DoseConfig) -> float:
     """Optional penalty for high stimulation frequency."""
 
-    excess = max(0.0, float(theta.f) - float(dose_config.frequency_penalty_threshold_hz))
+    theta_values = theta_to_dict(theta)
+    if "f" in theta_values:
+        candidate_frequency_hz = float(theta_values["f"])
+    elif "f0_hz" in theta_values and "f1_hz" in theta_values:
+        candidate_frequency_hz = float(theta_values["f0_hz"]) + float(theta_values["f1_hz"])
+    else:
+        candidate_frequency_hz = 0.0
+    excess = max(0.0, candidate_frequency_hz - float(dose_config.frequency_penalty_threshold_hz))
     return dose_config.frequency_penalty_weight * excess
 
 
@@ -135,7 +142,7 @@ def combined_objective(
     dose_config: DoseConfig,
     *,
     robust: bool,
-    theta: PatternParameters | None = None,
+    theta: Any | None = None,
     pulse_recruitment_fraction: Sequence[float] | None = None,
 ) -> tuple[float, float]:
     """Compute the robust and budget-penalized scalar objective."""
@@ -152,13 +159,3 @@ def combined_objective(
     penalized = robust_score - budget_penalty - aux_penalty
     return robust_score, penalized
 
-
-def device_metric_summary(pattern: StimPattern, dose_config: DoseConfig, device_config: DeviceConfig) -> dict[str, Any]:
-    """Compute device metrics from a pattern."""
-
-    return compute_pattern_dose(
-        pattern,
-        pulse_recruitment_fraction=np.zeros_like(pattern.pulse_alpha, dtype=float),
-        dose_config=dose_config,
-        device_config=device_config,
-    )
